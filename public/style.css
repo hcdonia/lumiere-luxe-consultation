@@ -1,0 +1,194 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Georgia', 'Times New Roman', serif;
+  background-color: #faf8f5;
+  color: #2c2c2c;
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  padding-top: 60px;
+}
+
+.container {
+  max-width: 700px;
+  width: 100%;
+  padding: 40px 24px;
+  text-align: center;
+}
+
+/* Header */
+header {
+  margin-bottom: 48px;
+}
+
+.salon-name {
+  font-size: 2rem;
+  font-weight: 400;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: #1a1a1a;
+}
+
+.salon-tagline {
+  font-size: 0.85rem;
+  letter-spacing: 0.1em;
+  color: #888;
+  margin-top: 4px;
+}
+
+/* States */
+.state {
+  animation: fadeIn 0.4s ease-in;
+}
+
+.hidden {
+  display: none !important;
+}
+
+/* Loading */
+.spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid #e0d6cc;
+  border-top-color: #b89b7a;
+  border-radius: 50%;
+  margin: 0 auto 24px;
+  animation: spin 0.8s linear infinite;
+}
+
+#loading h2 {
+  font-size: 1.3rem;
+  font-weight: 400;
+  margin-bottom: 12px;
+}
+
+#loading p {
+  font-size: 0.95rem;
+  color: #666;
+  line-height: 1.6;
+}
+
+/* Results */
+#results h2 {
+  font-size: 1rem;
+  font-weight: 400;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #888;
+  margin-bottom: 24px;
+}
+
+.recommendation-card {
+  background: #fff;
+  border: 1px solid #e8e2da;
+  border-radius: 12px;
+  padding: 36px 28px;
+  margin-bottom: 24px;
+}
+
+.recommendation-card h3 {
+  font-size: 1.6rem;
+  font-weight: 400;
+  margin-bottom: 16px;
+  color: #1a1a1a;
+}
+
+.recommendation-card p {
+  font-size: 1rem;
+  line-height: 1.7;
+  color: #444;
+  margin-bottom: 20px;
+}
+
+.service-details {
+  font-size: 0.9rem;
+  color: #888;
+  line-height: 1.6;
+}
+
+/* Booking Widget */
+.book-heading {
+  margin-top: 36px;
+  margin-bottom: 20px;
+}
+
+#square-widget-container {
+  margin: 0 auto 16px;
+  min-height: 100px;
+}
+
+.fallback-link {
+  margin-top: 12px;
+  margin-bottom: 24px;
+}
+
+.fallback-link a {
+  font-size: 0.85rem;
+  color: #b89b7a;
+  text-decoration: underline;
+}
+
+.fallback-link a:hover {
+  color: #a38868;
+}
+
+.confirmation {
+  font-size: 0.85rem;
+  color: #888;
+  margin-top: 8px;
+}
+
+/* Error / No Data */
+#error h2,
+#no-data h2 {
+  font-size: 1.3rem;
+  font-weight: 400;
+  margin-bottom: 12px;
+}
+
+#error p,
+#no-data p {
+  font-size: 0.95rem;
+  color: #666;
+  line-height: 1.6;
+  margin-bottom: 28px;
+}
+
+/* Animations */
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Responsive */
+@media (max-width: 480px) {
+  .container {
+    padding: 32px 16px;
+  }
+
+  .salon-name {
+    font-size: 1.6rem;
+  }
+
+  .recommendation-card {
+    padding: 28px 20px;
+  }
+
+  .recommendation-card h3 {
+    font-size: 1.35rem;
+  }
+
+  .book-now-btn {
+    padding: 14px 36px;
+    width: 100%;
+  }
+}

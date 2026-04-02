@@ -1,0 +1,20 @@
+{
+  "name": "michelle-sanders-lumiere-luxe-bot",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "echo 'Run npx vercel dev from terminal'"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.82.0",
+    "square": "^44.0.1"
+  },
+  "devDependencies": {
+    "vercel": "^50.38.2"
+  }
+}

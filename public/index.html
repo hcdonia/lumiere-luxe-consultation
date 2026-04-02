@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Your Personalized Recommendation — Lumiere Luxe Salon</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1 class="salon-name">Lumiere Luxe</h1>
+      <p class="salon-tagline">Los Angeles &amp; South Bay</p>
+    </header>
+
+    <!-- Loading State -->
+    <section id="loading" class="state">
+      <div class="spinner"></div>
+      <h2>Analyzing your consultation...</h2>
+      <p>We're finding the perfect session for you. This will just take a moment.</p>
+    </section>
+
+    <!-- Results State -->
+    <section id="results" class="state hidden">
+      <h2>Your Recommended Session</h2>
+      <div class="recommendation-card">
+        <h3 id="service-name"></h3>
+        <p id="service-explanation"></p>
+        <div id="service-details" class="service-details"></div>
+      </div>
+
+      <h2 class="book-heading">Book Your Session</h2>
+      <div id="square-widget-container"></div>
+      <p class="fallback-link">
+        <a id="book-now-btn" href="#" target="_blank" rel="noopener">
+          Click here if the booking calendar doesn't load
+        </a>
+      </p>
+      <p class="confirmation" id="profile-status"></p>
+    </section>
+
+    <!-- Error State -->
+    <section id="error" class="state hidden">
+      <h2>Something went wrong</h2>
+      <p>We weren't able to generate your recommendation. Please contact us directly to book your session.</p>
+      <a href="https://lumiereluxesalon.com" class="book-now-btn" target="_blank" rel="noopener">
+        Visit Our Website
+      </a>
+    </section>
+
+    <!-- No Data State -->
+    <section id="no-data" class="state hidden">
+      <h2>No consultation data found</h2>
+      <p>It looks like you arrived here without completing the consultation form. Please fill out the form first.</p>
+      <a href="https://lumiereluxesalon.com" class="book-now-btn" target="_blank" rel="noopener">
+        Visit Our Website
+      </a>
+    </section>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
