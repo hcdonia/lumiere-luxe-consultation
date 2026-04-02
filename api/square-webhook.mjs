@@ -105,47 +105,52 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  // Respond immediately — Square expects a quick response
-  res.status(200).json({ received: true });
-
   try {
     const event = req.body;
 
     // Only handle booking.created events
-    if (event.type !== 'booking.created') return;
+    if (event.type !== 'booking.created') {
+      return res.status(200).json({ received: true, skipped: 'not booking.created' });
+    }
 
     const bookingId = event.data?.id || event.data?.object?.booking?.id;
-    if (!bookingId) return;
+    if (!bookingId) {
+      return res.status(200).json({ received: true, skipped: 'no booking id' });
+    }
 
     // Get booking details
     const booking = await getBooking(bookingId);
-    if (!booking) return;
+    if (!booking) return res.status(200).json({ received: true, skipped: 'booking not found' });
 
     const customerId = booking.customer_id;
-    if (!customerId) return;
+    if (!customerId) return res.status(200).json({ received: true, skipped: 'no customer id' });
 
     // Get customer and check if new
     const customer = await getCustomer(customerId);
-    if (!customer) return;
+    if (!customer) return res.status(200).json({ received: true, skipped: 'customer not found' });
 
     if (!isNewCustomer(customer, booking.created_at)) {
-      // Not a new customer — skip notification
-      return;
+      return res.status(200).json({ received: true, skipped: 'not a new customer' });
     }
 
     // Get stylist info from booking
     const segment = booking.appointment_segments?.[0];
-    if (!segment) return;
+    if (!segment) return res.status(200).json({ received: true, skipped: 'no appointment segment' });
 
     const teamMember = await getTeamMember(segment.team_member_id);
     const stylistName = teamMember
       ? `${teamMember.given_name || ''} ${teamMember.family_name || ''}`.trim()
       : 'Unknown stylist';
 
-    // Get the customer's recommended service from their note
+    // Check if this customer came through the consultation form
     const note = customer.note || '';
+    const hasConsultation = note.includes('Hair Consultation');
     const recommendedMatch = note.match(/Recommended:\s*(.+)/);
-    const recommendedService = recommendedMatch ? recommendedMatch[1].trim() : 'N/A';
+    const recommendedService = recommendedMatch ? recommendedMatch[1].trim() : null;
+    const submissionId = customer.reference_id || null;
+    const submissionUrl = submissionId
+      ? `https://www.jotform.com/submission/${submissionId}`
+      : JOTFORM_TABLES_URL;
 
     // Build the Slack message
     const customerName = `${customer.given_name || ''} ${customer.family_name || ''}`.trim() || 'Unknown';
@@ -157,29 +162,46 @@ export default async function handler(req, res) {
       minute: '2-digit',
     });
 
-    const message = [
-      `✨ *New Client Booking Alert*`,
-      ``,
-      `*${customerName}* just booked an appointment with you!`,
-      `📅 ${bookingDate}`,
-      `💇 Recommended service: *${recommendedService}*`,
-      ``,
-      `They submitted a consultation form — check their answers and photos:`,
-      `👉 <${JOTFORM_TABLES_URL}|View Full Submission>`,
-      ``,
-      `Customer note:`,
-      `> ${note.replace(/\n/g, '\n> ')}`,
-    ].join('\n');
+    let message;
+
+    if (hasConsultation) {
+      message = [
+        `✨ *New Client Booking Alert*`,
+        ``,
+        `*${customerName}* just booked an appointment with you!`,
+        `📅 ${bookingDate}`,
+        `💇 Recommended service: *${recommendedService || 'N/A'}*`,
+        ``,
+        `They submitted a consultation form — check their answers and photos:`,
+        `👉 <${submissionUrl}|View Full Submission>`,
+        ``,
+        `Consultation notes:`,
+        `> ${note.replace(/\n/g, '\n> ')}`,
+      ].join('\n');
+    } else {
+      message = [
+        `📋 *New Client Booking Alert*`,
+        ``,
+        `*${customerName}* just booked an appointment with you!`,
+        `📅 ${bookingDate}`,
+        ``,
+        `⚠️ This client did *not* fill out the consultation form.`,
+        `You may want to reach out before the appointment to learn more about their hair.`,
+        customer.email_address ? `📧 ${customer.email_address}` : '',
+        customer.phone_number ? `📱 ${customer.phone_number}` : '',
+      ].filter(Boolean).join('\n');
+    }
 
     // Find the stylist on Slack and DM them
     const slackUser = await findSlackUser(stylistName);
     if (slackUser) {
       await sendSlackDM(slackUser.id, message);
-      console.log(`Slack notification sent to ${stylistName} (${slackUser.id})`);
+      return res.status(200).json({ received: true, notified: stylistName, slackUser: slackUser.id });
     } else {
-      console.log(`Could not find Slack user for stylist: ${stylistName}`);
+      return res.status(200).json({ received: true, error: `No Slack user found for: ${stylistName}` });
     }
   } catch (err) {
     console.error('Webhook processing error:', err.message);
+    return res.status(200).json({ received: true, error: err.message });
   }
 }

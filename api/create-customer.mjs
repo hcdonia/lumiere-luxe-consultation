@@ -32,7 +32,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { clientInfo, consultationSummary, recommendedService } = req.body;
+    const { clientInfo, consultationSummary, recommendedService, submissionID } = req.body;
 
     if (!clientInfo) {
       return res.status(400).json({ error: 'Missing client info' });
@@ -90,6 +90,7 @@ export default async function handler(req, res) {
         family_name: familyName || undefined,
         email_address: email || undefined,
         phone_number: phone || undefined,
+        reference_id: submissionID || undefined,
         note,
       });
 

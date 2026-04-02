@@ -35,6 +35,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         clientInfo: recommendation.clientInfo,
         consultationSummary: recommendation.consultationSummary,
         recommendedService: recommendation.serviceName,
+        submissionID,
       }),
     })
       .then((res) => {
