@@ -79,7 +79,8 @@ export default async function handler(req, res) {
       return res.status(201).json({ status: 'created', customerId: newCustomerId });
     }
   } catch (err) {
-    console.error('Square customer error:', err.message);
-    return res.status(500).json({ error: 'Failed to create/update customer' });
+    const detail = err.body?.errors?.[0]?.detail || err.message;
+    console.error('Square customer error:', detail, JSON.stringify(err.body || {}));
+    return res.status(500).json({ error: 'Failed to create/update customer', detail });
   }
 }
