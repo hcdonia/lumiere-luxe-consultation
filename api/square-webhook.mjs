@@ -108,9 +108,17 @@ export default async function handler(req, res) {
   try {
     const event = req.body;
 
-    // Only handle booking.created events
-    if (event.type !== 'booking.created') {
-      return res.status(200).json({ received: true, skipped: 'not booking.created' });
+    // Only handle booking events
+    if (event.type !== 'booking.created' && event.type !== 'booking.updated') {
+      return res.status(200).json({ received: true, skipped: `not a booking event: ${event.type}` });
+    }
+
+    // For booking.updated, only notify if status just changed to PENDING or ACCEPTED
+    if (event.type === 'booking.updated') {
+      const status = event.data?.object?.booking?.status;
+      if (status !== 'PENDING' && status !== 'ACCEPTED') {
+        return res.status(200).json({ received: true, skipped: `booking.updated but status is ${status}` });
+      }
     }
 
     const bookingId = event.data?.id || event.data?.object?.booking?.id;
