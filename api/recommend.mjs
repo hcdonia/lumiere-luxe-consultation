@@ -24,11 +24,13 @@ SERVICE GUIDE:
 ${serviceGuide}
 
 INSTRUCTIONS:
-- Recommend exactly ONE service based on the guest's answers.
+- Recommend exactly ONE service based on the guest's answers AND any photos they uploaded.
+- If photos of their current hair are included, use them to assess: current color level, existing highlights/balayage, gray percentage, hair condition, texture, and length. This visual assessment should heavily inform your recommendation.
+- If inspiration photos are included, use them to understand the guest's desired outcome and match it to the right service.
 - Use the "Who This Is For" and "Who This Is NOT For" criteria to make your decision.
 - Pay close attention to the Quick Decision Matrix for common scenarios.
-- Do NOT simply go with whatever service the guest selected on the form. Clients often pick based on price, not what's actually right for their hair. Use their hair history, goals, and the service guide criteria to determine the best match independently.
-- If the guest's answers suggest they need an in-person consultation first (e.g., very dark/box-colored hair wanting platinum, severely damaged hair), still recommend the closest service but note that a consultation is recommended.
+- Do NOT simply go with whatever service the guest selected on the form. Clients often pick based on price, not what's actually right for their hair. Use their hair history, goals, photos, and the service guide criteria to determine the best match independently.
+- If the guest's answers or photos suggest they need an in-person consultation first (e.g., very dark/box-colored hair wanting platinum, severely damaged hair, heavy box color), still recommend the closest service but note that a consultation is recommended.
 - Speak directly to the guest in a warm, professional, and encouraging tone.
 
 Respond in JSON format ONLY (no markdown, no code fences):
@@ -55,14 +57,14 @@ async function fetchSubmission(submissionID) {
   return data.content;
 }
 
-// Convert JotForm submission answers into readable text for the AI
+// Convert JotForm submission answers into readable text for the AI (excludes file uploads)
 function formatSubmissionForAI(submission) {
   const answers = submission.answers || {};
   const lines = [];
 
   for (const [, field] of Object.entries(answers)) {
-    // Skip non-answer fields (headings, buttons, etc.)
-    if (!field.answer || field.type === 'control_head' || field.type === 'control_button') {
+    // Skip non-answer fields (headings, buttons, images, file uploads)
+    if (!field.answer || field.type === 'control_head' || field.type === 'control_button' || field.type === 'control_image' || field.type === 'control_fileupload') {
       continue;
     }
 
@@ -80,6 +82,46 @@ function formatSubmissionForAI(submission) {
   }
 
   return lines.join('\n');
+}
+
+// Extract image URLs from file upload fields
+function extractImageUrls(submission) {
+  const answers = submission.answers || {};
+  const images = [];
+
+  for (const [, field] of Object.entries(answers)) {
+    if (field.type !== 'control_fileupload' || !field.answer) continue;
+
+    const urls = Array.isArray(field.answer) ? field.answer : [field.answer];
+    const label = field.text || field.name;
+
+    for (const url of urls) {
+      // Only include image files
+      if (/\.(jpg|jpeg|png|gif|webp)$/i.test(url)) {
+        images.push({ url, label });
+      }
+    }
+  }
+
+  return images;
+}
+
+// Download an image and convert to base64 for the Claude API
+async function fetchImageAsBase64(url) {
+  const res = await fetch(url);
+  if (!res.ok) return null;
+
+  const contentType = res.headers.get('content-type') || 'image/jpeg';
+  const buffer = await res.arrayBuffer();
+  const base64 = Buffer.from(buffer).toString('base64');
+
+  // Map content type to Claude's supported media types
+  let mediaType = 'image/jpeg';
+  if (contentType.includes('png')) mediaType = 'image/png';
+  else if (contentType.includes('gif')) mediaType = 'image/gif';
+  else if (contentType.includes('webp')) mediaType = 'image/webp';
+
+  return { base64, mediaType };
 }
 
 // Extract client info (name, email, phone) from submission
@@ -132,6 +174,67 @@ export default async function handler(req, res) {
     // Fetch submission from JotForm
     const submission = await fetchSubmission(submissionID);
     const formattedAnswers = formatSubmissionForAI(submission);
+    const imageRefs = extractImageUrls(submission);
+
+    // Download images in parallel (limit to 8 to stay within API limits)
+    const imageResults = await Promise.all(
+      imageRefs.slice(0, 8).map(async (img) => {
+        const data = await fetchImageAsBase64(img.url);
+        return data ? { ...data, label: img.label } : null;
+      })
+    );
+    const validImages = imageResults.filter(Boolean);
+
+    // Build message content: text + images
+    const userContent = [];
+
+    userContent.push({
+      type: 'text',
+      text: `Here are my consultation form answers:\n\n${formattedAnswers}`,
+    });
+
+    if (validImages.length > 0) {
+      // Group images by their label (current hair vs inspiration)
+      const currentHairImages = validImages.filter((img) =>
+        img.label.toLowerCase().includes('current') || img.label.toLowerCase().includes('confirm')
+      );
+      const inspoImages = validImages.filter((img) =>
+        img.label.toLowerCase().includes('inspirat') || img.label.toLowerCase().includes('look you are wanting')
+      );
+      const otherImages = validImages.filter(
+        (img) => !currentHairImages.includes(img) && !inspoImages.includes(img)
+      );
+
+      if (currentHairImages.length > 0) {
+        userContent.push({ type: 'text', text: '\nPhotos of my current hair:' });
+        for (const img of currentHairImages) {
+          userContent.push({
+            type: 'image',
+            source: { type: 'base64', media_type: img.mediaType, data: img.base64 },
+          });
+        }
+      }
+
+      if (inspoImages.length > 0) {
+        userContent.push({ type: 'text', text: '\nMy inspiration photos (the look I want to achieve):' });
+        for (const img of inspoImages) {
+          userContent.push({
+            type: 'image',
+            source: { type: 'base64', media_type: img.mediaType, data: img.base64 },
+          });
+        }
+      }
+
+      if (otherImages.length > 0) {
+        userContent.push({ type: 'text', text: '\nAdditional photos:' });
+        for (const img of otherImages) {
+          userContent.push({
+            type: 'image',
+            source: { type: 'base64', media_type: img.mediaType, data: img.base64 },
+          });
+        }
+      }
+    }
 
     const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -141,7 +244,7 @@ export default async function handler(req, res) {
       messages: [
         {
           role: 'user',
-          content: `Here are my consultation form answers:\n\n${formattedAnswers}`,
+          content: userContent,
         },
       ],
       system: SYSTEM_PROMPT,
