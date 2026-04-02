@@ -1,5 +1,30 @@
-import { SquareClient, SquareEnvironment } from 'square';
 import { randomUUID } from 'crypto';
+
+const SQUARE_BASE_URL = {
+  production: 'https://connect.squareup.com',
+  sandbox: 'https://connect.squareupsandbox.com',
+};
+
+async function squareRequest(method, path, body) {
+  const env = process.env.SQUARE_ENVIRONMENT || 'sandbox';
+  const baseUrl = SQUARE_BASE_URL[env] || SQUARE_BASE_URL.sandbox;
+
+  const res = await fetch(`${baseUrl}${path}`, {
+    method,
+    headers: {
+      'Authorization': `Bearer ${process.env.SQUARE_ACCESS_TOKEN}`,
+      'Content-Type': 'application/json',
+      'Square-Version': '2025-03-19',
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.errors?.[0]?.detail || `Square API error: ${res.status}`);
+  }
+  return data;
+}
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -7,14 +32,6 @@ export default async function handler(req, res) {
   }
 
   try {
-    const squareClient = new SquareClient({
-      token: process.env.SQUARE_ACCESS_TOKEN,
-      environment:
-        process.env.SQUARE_ENVIRONMENT === 'production'
-          ? SquareEnvironment.Production
-          : SquareEnvironment.Sandbox,
-    });
-
     const { clientInfo, consultationSummary, recommendedService } = req.body;
 
     if (!clientInfo) {
@@ -39,48 +56,47 @@ export default async function handler(req, res) {
     let existingCustomerId = null;
 
     if (email) {
-      const searchResponse = await squareClient.customers.search({
+      const searchData = await squareRequest('POST', '/v2/customers/search', {
         query: {
           filter: {
-            emailAddress: {
+            email_address: {
               exact: email,
             },
           },
         },
       });
 
-      const customers = searchResponse.customers;
-      if (customers && customers.length > 0) {
-        existingCustomerId = customers[0].id;
+      if (searchData.customers && searchData.customers.length > 0) {
+        existingCustomerId = searchData.customers[0].id;
       }
     }
 
     if (existingCustomerId) {
-      // Update existing customer — append new consultation to existing note
-      const existingCustomer = await squareClient.customers.get({ customerId: existingCustomerId });
-      const existingNote = existingCustomer.customer.note || '';
+      // Get existing customer to append to note
+      const existingData = await squareRequest('GET', `/v2/customers/${existingCustomerId}`);
+      const existingNote = existingData.customer?.note || '';
       const updatedNote = existingNote ? `${note}\n\n${existingNote}` : note;
 
-      await squareClient.customers.update({ customerId: existingCustomerId, note: updatedNote });
+      await squareRequest('PUT', `/v2/customers/${existingCustomerId}`, {
+        note: updatedNote,
+      });
 
       return res.status(200).json({ status: 'updated', customerId: existingCustomerId });
     } else {
       // Create new customer
-      const createResponse = await squareClient.customers.create({
-        idempotencyKey: randomUUID(),
-        givenName: givenName || undefined,
-        familyName: familyName || undefined,
-        emailAddress: email || undefined,
-        phoneNumber: phone || undefined,
+      const createData = await squareRequest('POST', '/v2/customers', {
+        idempotency_key: randomUUID(),
+        given_name: givenName || undefined,
+        family_name: familyName || undefined,
+        email_address: email || undefined,
+        phone_number: phone || undefined,
         note,
       });
 
-      const newCustomerId = createResponse.customer.id;
-      return res.status(201).json({ status: 'created', customerId: newCustomerId });
+      return res.status(201).json({ status: 'created', customerId: createData.customer.id });
     }
   } catch (err) {
-    const detail = err.body?.errors?.[0]?.detail || err.message;
-    console.error('Square customer error:', detail, JSON.stringify(err.body || {}));
-    return res.status(500).json({ error: 'Failed to create/update customer', detail });
+    console.error('Square customer error:', err.message);
+    return res.status(500).json({ error: 'Failed to create/update customer', detail: err.message });
   }
 }
