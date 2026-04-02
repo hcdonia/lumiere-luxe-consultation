@@ -39,7 +39,7 @@ Respond in JSON format ONLY (no markdown, no code fences):
   "serviceName": "<full service name as listed in the guide>",
   "explanation": "<2-3 sentences explaining why this session is perfect for her, referencing her specific answers. Be warm and personal.>",
   "details": "<duration and price range for this service>",
-  "consultationSummary": "<2-3 sentence summary of the guest's hair situation, goals, and recommended service — written for the salon stylist, not the guest. Include key details like current hair state, desired outcome, and any flags.>"
+  "consultationSummary": "<Detailed consultation summary written for the salon stylist. Include ALL of the following that apply:\n- Current hair: color level, condition, texture, length (mention what you see in photos if provided)\n- Hair history: chemical treatments, previous color, box color, perms, relaxers, keratin, etc.\n- What she wants: desired outcome, inspiration photo description if provided\n- Maintenance preference: how often she's willing to come back\n- Priority: speed vs hair health\n- Preferred stylist\n- Flags: anything the stylist should be aware of (damage, unrealistic expectations, needs in-person consultation, etc.)\n- Recommended service and why\nWrite 4-6 sentences. Be specific and detailed — this is the stylist's prep notes.>"
 }`;
 
 // Fetch submission data from JotForm API
