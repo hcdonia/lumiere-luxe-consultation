@@ -404,6 +404,37 @@ header {
   font-weight: 500;
 }
 
+.ext-learn-more {
+  margin: 28px 0 20px;
+  padding: 20px;
+  background: #fff;
+  border: 1px solid #e8e2da;
+  border-radius: 12px;
+}
+
+.ext-learn-more p {
+  font-size: 0.95rem;
+  color: #444;
+  line-height: 1.6;
+  margin-bottom: 14px;
+}
+
+.ext-learn-btn {
+  display: inline-block;
+  background: #b89b7a;
+  color: #fff;
+  text-decoration: none;
+  padding: 12px 28px;
+  border-radius: 6px;
+  font-size: 0.95rem;
+  letter-spacing: 0.05em;
+  transition: background 0.15s ease;
+}
+
+.ext-learn-btn:hover {
+  background: #a38868;
+}
+
 .ext-confirmed-note {
   font-size: 0.85rem;
   color: #888;
