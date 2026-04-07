@@ -5,12 +5,12 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const applicationId = process.env.SQUARE_APPLICATION_ID;
+  const applicationId = (process.env.SQUARE_APP_ID || '').trim();
   const locationId = 'LWJX3SDVSAD04';
   const environment = process.env.SQUARE_ENVIRONMENT || 'sandbox';
 
   if (!applicationId) {
-    return res.status(500).json({ error: 'Missing SQUARE_APPLICATION_ID' });
+    return res.status(500).json({ error: 'Missing SQUARE_APP_ID' });
   }
 
   return res.status(200).json({ applicationId, locationId, environment });
