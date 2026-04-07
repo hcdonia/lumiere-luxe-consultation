@@ -53,9 +53,24 @@
       </p>
 
       <div class="extensions-step">
-        <h3>1. Choose a time</h3>
-        <div id="ext-slots-status" class="ext-status">Loading available times…</div>
-        <div id="ext-slots"></div>
+        <h3>1. Choose a date &amp; time</h3>
+        <div id="ext-slots-status" class="ext-status">Loading availability…</div>
+
+        <div id="ext-calendar-wrap" class="hidden">
+          <div class="ext-month-nav">
+            <button type="button" id="ext-prev-month" aria-label="Previous month">‹</button>
+            <span id="ext-month-label"></span>
+            <button type="button" id="ext-next-month" aria-label="Next month">›</button>
+          </div>
+
+          <div class="ext-calendar" id="ext-calendar"></div>
+
+          <div id="ext-times-wrap" class="hidden">
+            <h4 id="ext-times-heading"></h4>
+            <div class="ext-slot-grid" id="ext-times"></div>
+          </div>
+        </div>
+
         <p id="ext-selected-summary" class="ext-selected hidden"></p>
       </div>
 

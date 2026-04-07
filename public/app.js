@@ -99,19 +99,27 @@ function renderRecommendation(data) {
 
 let extState = {
   selectedSlot: null,
+  selectedDate: null, // YYYY-MM-DD in LA tz
   card: null,
   payments: null,
   clientInfo: null,
   submissionID: null,
   busy: false,
+  slotsByDate: {},
+  windowStart: null, // YYYY-MM-DD
+  windowEnd: null, // YYYY-MM-DD
+  viewYear: 0,
+  viewMonth: 0, // 0-indexed
 };
 
 async function initExtensionsFlow(clientInfo, submissionID) {
   extState.clientInfo = clientInfo;
   extState.submissionID = submissionID;
 
-  // Wire pay button
+  // Wire static buttons
   document.getElementById('ext-pay-btn').addEventListener('click', handleExtensionsPay);
+  document.getElementById('ext-prev-month').addEventListener('click', () => changeMonth(-1));
+  document.getElementById('ext-next-month').addEventListener('click', () => changeMonth(1));
 
   // Kick off availability fetch + Square SDK init in parallel.
   await Promise.all([loadAvailability(), initSquarePayments()]);
@@ -119,74 +127,176 @@ async function initExtensionsFlow(clientInfo, submissionID) {
 
 async function loadAvailability() {
   const statusEl = document.getElementById('ext-slots-status');
-  const slotsEl = document.getElementById('ext-slots');
-  statusEl.textContent = 'Loading available times…';
-  slotsEl.innerHTML = '';
+  const wrap = document.getElementById('ext-calendar-wrap');
+  statusEl.textContent = 'Loading availability…';
+  wrap.classList.add('hidden');
 
   try {
     const res = await fetch('/api/extensions-availability');
     if (!res.ok) throw new Error('availability fetch failed');
-    const { slots } = await res.json();
+    const { slotsByDate, windowStart, windowEnd } = await res.json();
 
-    if (!slots || slots.length === 0) {
-      statusEl.textContent = 'No availability in the next 14 days. Please contact the salon directly.';
+    if (!slotsByDate || Object.keys(slotsByDate).length === 0) {
+      statusEl.textContent = 'No availability in the next 2 months. Please contact the salon directly.';
       return;
     }
 
+    extState.slotsByDate = slotsByDate;
+    extState.windowStart = windowStart;
+    extState.windowEnd = windowEnd;
+
+    // Initial view: month of the earliest available date
+    const firstAvailable = Object.keys(slotsByDate).sort()[0];
+    const [y, m] = firstAvailable.split('-').map(Number);
+    extState.viewYear = y;
+    extState.viewMonth = m - 1;
+
     statusEl.textContent = '';
-    renderSlots(slots);
+    wrap.classList.remove('hidden');
+    renderCalendar();
   } catch (err) {
     console.error(err);
-    statusEl.textContent = 'Could not load available times. Please refresh and try again.';
+    statusEl.textContent = 'Could not load availability. Please refresh and try again.';
   }
 }
 
-function renderSlots(slots) {
-  const container = document.getElementById('ext-slots');
-  container.innerHTML = '';
+function changeMonth(delta) {
+  const newDate = new Date(extState.viewYear, extState.viewMonth + delta, 1);
+  extState.viewYear = newDate.getFullYear();
+  extState.viewMonth = newDate.getMonth();
+  renderCalendar();
+}
 
-  // Group slots by local date
-  const groups = {};
-  for (const slot of slots) {
-    const d = new Date(slot.startAt);
-    const key = d.toLocaleDateString('en-US', {
-      weekday: 'long',
-      month: 'long',
-      day: 'numeric',
-      timeZone: 'America/Los_Angeles',
-    });
-    if (!groups[key]) groups[key] = [];
-    groups[key].push(slot);
+function renderCalendar() {
+  const calEl = document.getElementById('ext-calendar');
+  const labelEl = document.getElementById('ext-month-label');
+  const prevBtn = document.getElementById('ext-prev-month');
+  const nextBtn = document.getElementById('ext-next-month');
+
+  const year = extState.viewYear;
+  const month = extState.viewMonth;
+  const monthName = new Date(year, month, 1).toLocaleDateString('en-US', {
+    month: 'long',
+    year: 'numeric',
+  });
+  labelEl.textContent = monthName;
+
+  // Disable nav buttons outside the availability window
+  const [winStartY, winStartM] = extState.windowStart.split('-').map(Number);
+  const [winEndY, winEndM] = extState.windowEnd.split('-').map(Number);
+  prevBtn.disabled = (year < winStartY) || (year === winStartY && month <= winStartM - 1);
+  nextBtn.disabled = (year > winEndY) || (year === winEndY && month >= winEndM - 1);
+
+  calEl.innerHTML = '';
+
+  // Day-of-week headers (Sun-Sat)
+  const dows = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  for (const d of dows) {
+    const h = document.createElement('div');
+    h.className = 'ext-cal-dow';
+    h.textContent = d;
+    calEl.appendChild(h);
   }
 
-  for (const [day, daySlots] of Object.entries(groups)) {
-    const dayWrap = document.createElement('div');
-    dayWrap.className = 'ext-day';
+  const firstOfMonth = new Date(year, month, 1);
+  const startOffset = firstOfMonth.getDay(); // 0 = Sun
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
 
-    const heading = document.createElement('h4');
-    heading.textContent = day;
-    dayWrap.appendChild(heading);
+  // Leading blank cells
+  for (let i = 0; i < startOffset; i++) {
+    const blank = document.createElement('div');
+    blank.className = 'ext-cal-cell empty';
+    calEl.appendChild(blank);
+  }
 
-    const grid = document.createElement('div');
-    grid.className = 'ext-slot-grid';
+  // Day cells
+  for (let day = 1; day <= daysInMonth; day++) {
+    const dateKey = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    const slots = extState.slotsByDate[dateKey];
+    const hasSlots = slots && slots.length > 0;
 
-    for (const slot of daySlots) {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'ext-slot';
-      btn.dataset.startAt = slot.startAt;
-      btn.textContent = new Date(slot.startAt).toLocaleTimeString('en-US', {
-        hour: 'numeric',
-        minute: '2-digit',
-        timeZone: 'America/Los_Angeles',
-      });
-      btn.addEventListener('click', () => selectSlot(slot, btn));
-      grid.appendChild(btn);
+    const cell = document.createElement('button');
+    cell.type = 'button';
+    cell.className = 'ext-cal-cell';
+    cell.textContent = day;
+    cell.dataset.date = dateKey;
+
+    if (!hasSlots) {
+      cell.disabled = true;
+      cell.classList.add('disabled');
+    } else {
+      cell.classList.add('available');
+      cell.addEventListener('click', () => selectDate(dateKey, cell));
     }
 
-    dayWrap.appendChild(grid);
-    container.appendChild(dayWrap);
+    if (extState.selectedDate === dateKey) {
+      cell.classList.add('selected');
+    }
+
+    calEl.appendChild(cell);
   }
+
+  // Re-render time slots for the selected date if it's in this month
+  if (extState.selectedDate) {
+    const [sy, sm] = extState.selectedDate.split('-').map(Number);
+    if (sy === year && sm - 1 === month) {
+      renderTimeSlots(extState.selectedDate);
+    } else {
+      document.getElementById('ext-times-wrap').classList.add('hidden');
+    }
+  }
+}
+
+function selectDate(dateKey, cellEl) {
+  extState.selectedDate = dateKey;
+  // Reset selected slot since it's tied to a previously selected date
+  extState.selectedSlot = null;
+  document.getElementById('ext-selected-summary').classList.add('hidden');
+
+  document.querySelectorAll('.ext-cal-cell.selected').forEach((el) => el.classList.remove('selected'));
+  if (cellEl) cellEl.classList.add('selected');
+
+  renderTimeSlots(dateKey);
+  updatePayButtonState();
+}
+
+function renderTimeSlots(dateKey) {
+  const wrap = document.getElementById('ext-times-wrap');
+  const heading = document.getElementById('ext-times-heading');
+  const grid = document.getElementById('ext-times');
+
+  const slots = extState.slotsByDate[dateKey] || [];
+  if (slots.length === 0) {
+    wrap.classList.add('hidden');
+    return;
+  }
+
+  const friendly = new Date(dateKey + 'T12:00:00').toLocaleDateString('en-US', {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+  });
+  heading.textContent = `Times for ${friendly}`;
+
+  grid.innerHTML = '';
+  for (const slot of slots) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'ext-slot';
+    btn.dataset.startAt = slot.startAt;
+    btn.textContent = new Date(slot.startAt).toLocaleTimeString('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
+      timeZone: 'America/Los_Angeles',
+    });
+    if (extState.selectedSlot && extState.selectedSlot.startAt === slot.startAt) {
+      btn.classList.add('selected');
+    }
+    btn.addEventListener('click', () => selectSlot(slot, btn));
+    grid.appendChild(btn);
+  }
+
+  wrap.classList.remove('hidden');
 }
 
 function selectSlot(slot, btnEl) {
@@ -301,7 +411,9 @@ async function handleExtensionsPay() {
       statusEl.textContent = 'That time was just taken. Please pick another.';
       statusEl.className = 'ext-status error';
       extState.selectedSlot = null;
+      extState.selectedDate = null;
       document.getElementById('ext-selected-summary').classList.add('hidden');
+      document.getElementById('ext-times-wrap').classList.add('hidden');
       await loadAvailability();
       return;
     }

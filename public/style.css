@@ -215,13 +215,118 @@ header {
   color: #b14a4a;
 }
 
-.ext-day {
+/* Month nav */
+.ext-month-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  padding: 0 4px;
+}
+
+.ext-month-nav span {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #1a1a1a;
+}
+
+.ext-month-nav button {
+  background: transparent;
+  border: 1px solid #d8cfc4;
+  border-radius: 6px;
+  width: 32px;
+  height: 32px;
+  font-size: 1.2rem;
+  line-height: 1;
+  color: #5c4a2c;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.15s ease;
+}
+
+.ext-month-nav button:hover:not(:disabled) {
+  background: #faf6f0;
+  border-color: #b89b7a;
+}
+
+.ext-month-nav button:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+/* Calendar grid */
+.ext-calendar {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
   margin-bottom: 20px;
 }
 
-.ext-day h4 {
-  font-size: 0.9rem;
+.ext-cal-dow {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #888;
+  text-align: center;
+  padding: 6px 0;
   font-weight: 600;
+}
+
+.ext-cal-cell {
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 0.9rem;
+  color: #ccc;
+  cursor: default;
+  transition: all 0.15s ease;
+  padding: 0;
+}
+
+.ext-cal-cell.empty {
+  border: none;
+}
+
+.ext-cal-cell.disabled {
+  color: #ccc;
+  cursor: not-allowed;
+}
+
+.ext-cal-cell.available {
+  background: #fff;
+  border-color: #d8cfc4;
+  color: #1a1a1a;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.ext-cal-cell.available:hover {
+  border-color: #b89b7a;
+  background: #faf6f0;
+}
+
+.ext-cal-cell.selected {
+  background: #b89b7a;
+  border-color: #b89b7a;
+  color: #fff;
+}
+
+#ext-times-wrap {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid #e8e2da;
+}
+
+#ext-times-wrap h4 {
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
   color: #555;
   margin-bottom: 10px;
 }
