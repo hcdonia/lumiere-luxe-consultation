@@ -12,6 +12,7 @@ const WIDGET_IDS = {
   'new-luxe': '31h9cf9wirzwgf',
   'natural-luxe': '8siltkx9sfo1nm',
   'mini-luxe': 'ftjxx4b9kxr3ku',
+  'haircut': '5oai4fqfchxlrg',
 };
 
 const SYSTEM_PROMPT = `You are an AI hair consultation specialist for Lumiere Luxe Salon in Los Angeles & South Bay.
@@ -39,6 +40,53 @@ Respond in JSON format ONLY (no markdown, no code fences):
   "details": "<duration and price range for this service>",
   "consultationSummary": "<Detailed consultation summary written for the salon stylist. Include ALL of the following that apply:\n- Current hair: color level, condition, texture, length (mention what you see in photos if provided)\n- Hair history: chemical treatments, previous color, box color, perms, relaxers, keratin, etc.\n- What she wants: desired outcome, inspiration photo description if provided\n- Maintenance preference: how often she's willing to come back\n- Priority: speed vs hair health\n- Preferred stylist\n- Flags: anything the stylist should be aware of (damage, unrealistic expectations, needs in-person consultation, etc.)\n- Recommended service and why\nWrite 4-6 sentences. Be specific and detailed — this is the stylist's prep notes.>"
 }`;
+
+// Detect whether the guest selected "Extensions" on the JotForm services question (q name: whichOf)
+function wantsExtensions(submission) {
+  const answers = submission.answers || {};
+  for (const [, field] of Object.entries(answers)) {
+    if ((field.name || '').toLowerCase() !== 'whichof') continue;
+    const ans = field.answer;
+    if (!ans) continue;
+    const values = Array.isArray(ans) ? ans : [ans];
+    if (values.some((v) => String(v).toLowerCase().includes('extension'))) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// Detect whether the guest answered YES to "Are you ONLY looking to book a haircut?" (q name: areYou)
+function wantsHaircutOnly(submission) {
+  const answers = submission.answers || {};
+  for (const [, field] of Object.entries(answers)) {
+    if ((field.name || '').toLowerCase() !== 'areyou') continue;
+    if (String(field.answer || '').trim().toLowerCase() === 'yes') {
+      return true;
+    }
+  }
+  return false;
+}
+
+// Build a hardcoded haircut recommendation (no AI call needed)
+function buildHaircutRecommendation(submission) {
+  const widgetId = WIDGET_IDS.haircut;
+  return {
+    serviceKey: 'haircut',
+    serviceName: 'Haircut',
+    explanation:
+      "Since you're just looking for a haircut, you can book that directly below. Pick a time that works for you and we can't wait to see you!",
+    details: 'Haircut & style with one of our talented stylists.',
+    consultationSummary: `Guest indicated they are ONLY looking to book a haircut. Contact info: ${
+      extractClientInfo(submission).email || 'no email'
+    }.`,
+    widgetId,
+    locationId: LOCATION_ID,
+    bookingUrl: `https://squareup.com/appointments/book/${widgetId}/${LOCATION_ID}/services`,
+    widgetScriptUrl: `https://app.squareup.com/appointments/buyer/widget/${widgetId}/${LOCATION_ID}.js`,
+    clientInfo: extractClientInfo(submission),
+  };
+}
 
 // Fetch submission data from JotForm API
 async function fetchSubmission(submissionID) {
@@ -171,6 +219,20 @@ export default async function handler(req, res) {
 
     // Fetch submission from JotForm
     const submission = await fetchSubmission(submissionID);
+
+    // Extensions short-circuit: skip AI entirely and route to the dedicated booking flow.
+    if (wantsExtensions(submission)) {
+      return res.status(200).json({
+        flow: 'extensions',
+        clientInfo: extractClientInfo(submission),
+      });
+    }
+
+    // Haircut-only short-circuit: skip AI and return the haircut booking widget directly.
+    if (wantsHaircutOnly(submission)) {
+      return res.status(200).json(buildHaircutRecommendation(submission));
+    }
+
     const formattedAnswers = formatSubmissionForAI(submission);
     const imageRefs = extractImageUrls(submission);
 

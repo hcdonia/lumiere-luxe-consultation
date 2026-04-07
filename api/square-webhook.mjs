@@ -172,7 +172,21 @@ export default async function handler(req, res) {
 
     let message;
 
-    if (hasConsultation) {
+    const hasExtensionsDeposit = note.includes('DEPOSIT PAID');
+
+    if (hasExtensionsDeposit) {
+      message = [
+        `💎 *Extensions Consultation Booked*`,
+        ``,
+        `*${customerName}* just paid the $35 deposit and booked an extensions consultation!`,
+        `📅 ${bookingDate}`,
+        ``,
+        `💰 Deposit paid — apply $35 credit toward extension services if she moves forward.`,
+        ``,
+        `They submitted a consultation form — check their answers and photos:`,
+        `👉 <${submissionUrl}|View Full Submission>`,
+      ].join('\n');
+    } else if (hasConsultation) {
       message = [
         `✨ *New Client Booking Alert*`,
         ``,

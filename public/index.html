@@ -39,6 +39,46 @@
       <p class="confirmation" id="profile-status"></p>
     </section>
 
+    <!-- Extensions Consultation State -->
+    <section id="extensions" class="state hidden">
+      <h2>Book Your Extensions Consultation</h2>
+      <p class="extensions-intro">
+        Because extensions are highly customized, we book all new extension guests through a brief
+        $35 consultation with our specialist. Pick a time that works for you below.
+      </p>
+      <p class="extensions-disclaimer">
+        <strong>Please note:</strong> If you move forward with an extension service, the $35 fee
+        for this consultation will be applied toward the total of your services. Otherwise, this
+        fee is non-refundable and covers the price of this consultation appointment.
+      </p>
+
+      <div class="extensions-step">
+        <h3>1. Choose a time</h3>
+        <div id="ext-slots-status" class="ext-status">Loading available times…</div>
+        <div id="ext-slots"></div>
+        <p id="ext-selected-summary" class="ext-selected hidden"></p>
+      </div>
+
+      <div class="extensions-step" id="ext-payment-step">
+        <h3>2. Pay your $35 deposit</h3>
+        <div id="card-container"></div>
+        <button id="ext-pay-btn" type="button" disabled>Select a time first</button>
+        <p id="ext-pay-status" class="ext-status"></p>
+      </div>
+    </section>
+
+    <!-- Extensions Confirmation State -->
+    <section id="extensions-confirmed" class="state hidden">
+      <h2>You're booked! 💎</h2>
+      <p>Your extensions consultation is confirmed for:</p>
+      <p class="ext-confirmed-time" id="ext-confirmed-time"></p>
+      <p>You'll receive a confirmation from Square shortly. We can't wait to see you!</p>
+      <p class="ext-confirmed-note">
+        Remember: if you move forward with an extension service at your appointment, the $35 fee
+        will be credited toward your services.
+      </p>
+    </section>
+
     <!-- Error State -->
     <section id="error" class="state hidden">
       <h2>Something went wrong</h2>

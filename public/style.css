@@ -159,6 +159,153 @@ header {
   margin-bottom: 28px;
 }
 
+/* Extensions Consultation */
+#extensions h2,
+#extensions-confirmed h2 {
+  font-size: 1.6rem;
+  font-weight: 400;
+  margin-bottom: 20px;
+  color: #1a1a1a;
+}
+
+.extensions-intro {
+  font-size: 1rem;
+  line-height: 1.7;
+  color: #444;
+  margin-bottom: 20px;
+}
+
+.extensions-disclaimer {
+  background: #fff8ee;
+  border: 1px solid #e8d9b8;
+  border-radius: 8px;
+  padding: 16px 20px;
+  font-size: 0.9rem;
+  line-height: 1.6;
+  color: #5c4a2c;
+  text-align: left;
+  margin-bottom: 32px;
+}
+
+.extensions-step {
+  background: #fff;
+  border: 1px solid #e8e2da;
+  border-radius: 12px;
+  padding: 24px 20px;
+  margin-bottom: 20px;
+  text-align: left;
+}
+
+.extensions-step h3 {
+  font-size: 1.1rem;
+  font-weight: 400;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #888;
+  margin-bottom: 16px;
+}
+
+.ext-status {
+  font-size: 0.9rem;
+  color: #666;
+  margin-top: 12px;
+}
+
+.ext-status.error {
+  color: #b14a4a;
+}
+
+.ext-day {
+  margin-bottom: 20px;
+}
+
+.ext-day h4 {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #555;
+  margin-bottom: 10px;
+}
+
+.ext-slot-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+  gap: 8px;
+}
+
+.ext-slot {
+  background: #fff;
+  border: 1px solid #d8cfc4;
+  border-radius: 6px;
+  padding: 10px 8px;
+  font-family: inherit;
+  font-size: 0.9rem;
+  color: #1a1a1a;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.ext-slot:hover {
+  border-color: #b89b7a;
+  background: #faf6f0;
+}
+
+.ext-slot.selected {
+  background: #b89b7a;
+  border-color: #b89b7a;
+  color: #fff;
+}
+
+.ext-selected {
+  margin-top: 16px;
+  padding: 10px 14px;
+  background: #f6efe5;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  color: #5c4a2c;
+}
+
+#card-container {
+  margin-bottom: 16px;
+  min-height: 90px;
+}
+
+#ext-pay-btn {
+  background: #b89b7a;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 14px 24px;
+  font-family: inherit;
+  font-size: 1rem;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  width: 100%;
+  transition: background 0.15s ease;
+}
+
+#ext-pay-btn:hover:not(:disabled) {
+  background: #a38868;
+}
+
+#ext-pay-btn:disabled {
+  background: #d8cfc4;
+  cursor: not-allowed;
+}
+
+.ext-confirmed-time {
+  font-size: 1.2rem;
+  color: #1a1a1a;
+  margin: 16px 0;
+  font-weight: 500;
+}
+
+.ext-confirmed-note {
+  font-size: 0.85rem;
+  color: #888;
+  margin-top: 24px;
+  line-height: 1.6;
+}
+
 /* Animations */
 @keyframes spin {
   to { transform: rotate(360deg); }
