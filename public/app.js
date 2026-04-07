@@ -63,6 +63,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 function showState(stateId) {
   document.querySelectorAll('.state').forEach((el) => el.classList.add('hidden'));
   document.getElementById(stateId).classList.remove('hidden');
+  // Scroll to top so the user always sees the new state from the beginning
+  window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 function renderRecommendation(data) {
