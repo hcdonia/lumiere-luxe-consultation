@@ -2,6 +2,11 @@ import Anthropic from '@anthropic-ai/sdk';
 import { readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import sharp from 'sharp';
+
+// Claude API caps images at 5 MiB (5,242,880 bytes). Base64 encoding inflates
+// size by ~33%, so target 3.5 MB raw to guarantee the encoded payload fits.
+const MAX_IMAGE_BYTES = 3_500_000;
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const serviceGuide = readFileSync(join(__dirname, '..', 'data', 'service-guide.md'), 'utf-8');
@@ -152,14 +157,33 @@ function extractImageUrls(submission) {
   return images;
 }
 
+// Re-encode an oversized image as JPEG, shrinking dimensions until it fits
+// under MAX_IMAGE_BYTES. GIFs are skipped (sharp would lose animation) and
+// returned unchanged — Claude will reject them if still too big, but that's
+// vanishingly rare for consultation uploads.
+async function shrinkToFit(buffer, contentType) {
+  if (contentType.includes('gif')) return { buffer, mediaType: 'image/gif' };
+
+  let width = 2000;
+  let quality = 85;
+  let out = await sharp(buffer).rotate().resize({ width, withoutEnlargement: true }).jpeg({ quality }).toBuffer();
+
+  while (out.length > MAX_IMAGE_BYTES && (width > 800 || quality > 60)) {
+    if (quality > 60) quality -= 10;
+    else width = Math.max(800, Math.floor(width * 0.8));
+    out = await sharp(buffer).rotate().resize({ width, withoutEnlargement: true }).jpeg({ quality }).toBuffer();
+  }
+
+  return { buffer: out, mediaType: 'image/jpeg' };
+}
+
 // Download an image and convert to base64 for the Claude API
 async function fetchImageAsBase64(url) {
   const res = await fetch(url);
   if (!res.ok) return null;
 
   const contentType = res.headers.get('content-type') || 'image/jpeg';
-  const buffer = await res.arrayBuffer();
-  const base64 = Buffer.from(buffer).toString('base64');
+  let buffer = Buffer.from(await res.arrayBuffer());
 
   // Map content type to Claude's supported media types
   let mediaType = 'image/jpeg';
@@ -167,7 +191,13 @@ async function fetchImageAsBase64(url) {
   else if (contentType.includes('gif')) mediaType = 'image/gif';
   else if (contentType.includes('webp')) mediaType = 'image/webp';
 
-  return { base64, mediaType };
+  if (buffer.length > MAX_IMAGE_BYTES) {
+    const shrunk = await shrinkToFit(buffer, contentType);
+    buffer = shrunk.buffer;
+    mediaType = shrunk.mediaType;
+  }
+
+  return { base64: buffer.toString('base64'), mediaType };
 }
 
 // Extract client info (name, email, phone) from submission
