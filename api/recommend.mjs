@@ -341,7 +341,10 @@ export default async function handler(req, res) {
     });
 
     const responseText = message.content[0].text;
-    const recommendation = JSON.parse(responseText);
+    // Claude sometimes wraps JSON in ```json ... ``` despite the system prompt
+    // saying not to. Strip fences defensively before parsing.
+    const cleaned = responseText.replace(/^\s*```(?:json)?\s*|\s*```\s*$/g, '').trim();
+    const recommendation = JSON.parse(cleaned);
 
     // Attach widget info for embedding + fallback link
     const widgetId = WIDGET_IDS[recommendation.serviceKey] || '';
