@@ -3,6 +3,7 @@ import { readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import sharp from 'sharp';
+import heicConvert from 'heic-convert';
 
 // Claude API caps images at 5 MiB (5,242,880 bytes). Base64 encoding inflates
 // size by ~33%, so target 3.5 MB raw to guarantee the encoded payload fits.
@@ -148,8 +149,10 @@ function extractImageUrls(submission) {
 
     for (const url of urls) {
       // Only include image files
-      if (/\.(jpg|jpeg|png|gif|webp)$/i.test(url)) {
+      if (/\.(jpg|jpeg|png|gif|webp|heic|heif)$/i.test(url)) {
         images.push({ url, label });
+      } else {
+        console.warn('Dropping non-image upload from consultation:', url);
       }
     }
   }
@@ -191,8 +194,21 @@ async function fetchImageAsBase64(url) {
   else if (contentType.includes('gif')) mediaType = 'image/gif';
   else if (contentType.includes('webp')) mediaType = 'image/webp';
 
+  // Claude doesn't accept HEIC/HEIF. Convert to JPEG before anything else.
+  // Detect by URL since JotForm's content-type for HEIC is often unreliable.
+  if (/\.(heic|heif)$/i.test(url) || contentType.includes('heic') || contentType.includes('heif')) {
+    try {
+      const jpegBuffer = await heicConvert({ buffer, format: 'JPEG', quality: 0.9 });
+      buffer = Buffer.from(jpegBuffer);
+      mediaType = 'image/jpeg';
+    } catch (err) {
+      console.error('HEIC conversion failed for', url, '-', err.message);
+      return null;
+    }
+  }
+
   if (buffer.length > MAX_IMAGE_BYTES) {
-    const shrunk = await shrinkToFit(buffer, contentType);
+    const shrunk = await shrinkToFit(buffer, mediaType);
     buffer = shrunk.buffer;
     mediaType = shrunk.mediaType;
   }
