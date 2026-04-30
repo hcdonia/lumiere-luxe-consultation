@@ -5,6 +5,8 @@ const SQUARE_BASE_URL = {
   sandbox: 'https://connect.squareupsandbox.com',
 };
 
+const CONSULTATION_ATTR_KEY = 'square:9084740e-1f93-4c87-8937-cce6569f2faa';
+
 async function squareRequest(method, path, body) {
   const env = process.env.SQUARE_ENVIRONMENT || 'sandbox';
   const baseUrl = SQUARE_BASE_URL[env] || SQUARE_BASE_URL.sandbox;
@@ -44,13 +46,13 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'Email or phone is required' });
     }
 
-    // Build the note with AI summary
+    // Build consultation summary entry
     const date = new Date().toLocaleDateString('en-US', {
       year: 'numeric',
       month: 'long',
       day: 'numeric',
     });
-    const note = `--- Hair Consultation (${date}) ---\nRecommended: ${recommendedService || 'N/A'}\n${consultationSummary || ''}`;
+    const entry = `--- Hair Consultation (${date}) ---\nRecommended: ${recommendedService || 'N/A'}\n${consultationSummary || ''}`;
 
     // Search for existing customer by email
     let existingCustomerId = null;
@@ -71,14 +73,22 @@ export default async function handler(req, res) {
       }
     }
 
-    if (existingCustomerId) {
-      // Get existing customer to append to note
-      const existingData = await squareRequest('GET', `/v2/customers/${existingCustomerId}`);
-      const existingNote = existingData.customer?.note || '';
-      const updatedNote = existingNote ? `${note}\n\n${existingNote}` : note;
+    const encodedKey = encodeURIComponent(CONSULTATION_ATTR_KEY);
 
-      await squareRequest('PUT', `/v2/customers/${existingCustomerId}`, {
-        note: updatedNote,
+    if (existingCustomerId) {
+      // Fetch existing custom attribute to prepend new entry
+      let existingValue = '';
+      try {
+        const attrData = await squareRequest('GET', `/v2/customers/${existingCustomerId}/custom-attributes/${encodedKey}`);
+        existingValue = attrData.custom_attribute?.value || '';
+      } catch {
+        // Attribute not set yet — fine, start fresh
+      }
+
+      const updatedValue = existingValue ? `${entry}\n\n${existingValue}` : entry;
+
+      await squareRequest('POST', `/v2/customers/${existingCustomerId}/custom-attributes/${encodedKey}`, {
+        custom_attribute: { value: updatedValue },
       });
 
       return res.status(200).json({ status: 'updated', customerId: existingCustomerId });
@@ -91,10 +101,15 @@ export default async function handler(req, res) {
         email_address: email || undefined,
         phone_number: phone || undefined,
         reference_id: submissionID || undefined,
-        note,
       });
 
-      return res.status(201).json({ status: 'created', customerId: createData.customer.id });
+      const customerId = createData.customer.id;
+
+      await squareRequest('POST', `/v2/customers/${customerId}/custom-attributes/${encodedKey}`, {
+        custom_attribute: { value: entry },
+      });
+
+      return res.status(201).json({ status: 'created', customerId });
     }
   } catch (err) {
     console.error('Square customer error:', err.message);
