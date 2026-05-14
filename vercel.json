@@ -10,5 +10,9 @@
         { "key": "X-Content-Type-Options", "value": "nosniff" }
       ]
     }
+  ],
+  "crons": [
+    { "path": "/api/send-appointment-reminders", "schedule": "0 2 * * *" },
+    { "path": "/api/send-appointment-reminders", "schedule": "0 3 * * *" }
   ]
 }
