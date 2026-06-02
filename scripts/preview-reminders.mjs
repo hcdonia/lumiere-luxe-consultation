@@ -23,7 +23,7 @@ function tomorrowRangeUtc(now) {
     timeZone: SALON_TZ,
     year: 'numeric',
     month: '2-digit',
-    day: 'numeric',
+    day: '2-digit',
   }).formatToParts(now);
   const get = (t) => parts.find((p) => p.type === t).value;
   const todayLocal = `${get('year')}-${get('month')}-${get('day')}`;

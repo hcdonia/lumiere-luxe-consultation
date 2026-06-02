@@ -88,10 +88,15 @@ function tomorrowRangeUtc(now) {
     timeZone: SALON_TZ,
     year: 'numeric',
     month: '2-digit',
-    day: 'numeric',
+    day: '2-digit',
   }).formatToParts(now);
   const get = (t) => parts.find((p) => p.type === t).value;
   const todayLocal = `${get('year')}-${get('month')}-${get('day')}`;
+  // Guard: never let a malformed date silently produce an Invalid Date (this is
+  // what broke single-digit days like the 1st-9th when day was 'numeric').
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(todayLocal) || Number.isNaN(new Date(`${todayLocal}T00:00:00`).getTime())) {
+    throw new Error(`tomorrowRangeUtc: bad local date "${todayLocal}" from parts ${JSON.stringify(parts)}`);
+  }
   const tomorrowMidnightLocal = new Date(`${todayLocal}T00:00:00`);
   tomorrowMidnightLocal.setDate(tomorrowMidnightLocal.getDate() + 1);
 
@@ -109,6 +114,35 @@ function tomorrowRangeUtc(now) {
   return { startAtMin: startUtc.toISOString(), startAtMax: endUtc.toISOString() };
 }
 
+// --- Error alerting -------------------------------------------------------
+// Hunter wants an email whenever this job fails to text clients. Trim env vars
+// because Vercel sometimes stores trailing newlines.
+const ALERT_TO = (process.env.ALERT_EMAIL_TO || 'hunter@hairbyhunty.com').trim();
+// From must be on a Resend-verified domain. We reuse the MSM Resend key, whose
+// verified sending domain is the hunterdonia.com apex.
+const ALERT_FROM = (process.env.ALERT_EMAIL_FROM || 'Lumiere Luxe Bot <noreply@hunterdonia.com>').trim();
+
+async function sendAlertEmail(subject, text) {
+  const key = (process.env.RESEND_API_KEY || '').trim();
+  if (!key) {
+    console.error('[reminders] RESEND_API_KEY not set — could not email alert:', subject);
+    return;
+  }
+  try {
+    const r = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from: ALERT_FROM, to: [ALERT_TO], subject, text }),
+    });
+    if (!r.ok) {
+      const body = await r.text().catch(() => '');
+      console.error(`[reminders] alert email failed ${r.status}: ${body}`);
+    }
+  } catch (e) {
+    console.error('[reminders] alert email threw:', e.message);
+  }
+}
+
 export default async function handler(req, res) {
   const auth = req.headers.authorization || '';
   if (!process.env.CRON_SECRET || auth !== `Bearer ${process.env.CRON_SECRET}`) {
@@ -116,21 +150,18 @@ export default async function handler(req, res) {
   }
 
   const now = new Date();
-  const hour = laHour(now);
   const force = req.query?.force === '1';
   const dry = req.query?.dry === '1';
+
+  try {
+  const hour = laHour(now);
   if (hour !== FIRE_HOUR_LOCAL && !force) {
     return res.status(200).json({ skipped: `LA hour is ${hour}, waiting for ${FIRE_HOUR_LOCAL}` });
   }
 
   const { startAtMin, startAtMax } = tomorrowRangeUtc(now);
 
-  let bookings;
-  try {
-    bookings = await searchBookings(startAtMin, startAtMax);
-  } catch (err) {
-    return res.status(500).json({ error: `Square search failed: ${err.message}` });
-  }
+  const bookings = await searchBookings(startAtMin, startAtMax);
 
   const results = [];
   for (const booking of bookings) {
@@ -187,13 +218,47 @@ export default async function handler(req, res) {
     }
   }
 
+  const sent = results.filter((r) => r.sent).length;
+  const failed = results.filter((r) => r.error);
+
+  // Structured line for Vercel logs (greppable, one per run).
+  // Log COUNTS only (failed.length, not failed) so client phone numbers never
+  // land in Vercel logs. PII stays in the email to Hunter's own inbox.
+  console.log('[reminders] summary ' + JSON.stringify({
+    dry, total: bookings.length, sent, failed: failed.length,
+    window: { startAtMin, startAtMax },
+  }));
+
+  // A failed send means a real client did NOT get their form link — email Hunter.
+  if (!dry && failed.length > 0) {
+    const lines = failed.map((r) => `- booking ${r.id} (${r.start}): ${r.error}`).join('\n');
+    await sendAlertEmail(
+      `Lumiere Luxe: ${failed.length} reminder text(s) failed to send`,
+      `The nightly appointment-reminder job ran but ${failed.length} of ${bookings.length} ` +
+      `text(s) failed.\n\nFailed:\n${lines}\n\nTexted OK: ${sent}\nTime (UTC): ${now.toISOString()}`
+    );
+  }
+
   return res.status(200).json({
     ran: true,
     dry,
     window: { startAtMin, startAtMax },
     total: bookings.length,
-    sent: results.filter((r) => r.sent).length,
+    sent,
     wouldSend: results.filter((r) => r.wouldSend).length,
+    failed: failed.length,
     results,
   });
+  } catch (err) {
+    // Anything that escapes the per-booking loop (Square down, date bug, bad
+    // env) lands here. This is the case that silently sent zero texts before.
+    console.error('[reminders] FATAL ' + (err?.stack || err?.message || err));
+    await sendAlertEmail(
+      'Lumiere Luxe: appointment-reminder job CRASHED (no texts sent)',
+      `The nightly appointment-reminder job threw an error before it could send ` +
+      `texts, so NO clients were reminded.\n\nError: ${err?.message || err}\n\n` +
+      `Where:\n${err?.stack || '(no stack)'}\n\nTime (UTC): ${now.toISOString()}`
+    );
+    return res.status(500).json({ error: err?.message || String(err) });
+  }
 }
