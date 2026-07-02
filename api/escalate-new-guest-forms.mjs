@@ -48,9 +48,15 @@ const M = {
 const NEEDS_BUSINESS_HOURS = new Set(['r24', 'r36', 'sn1', 'sn2', 'cancel']);
 
 // --- Copy (Michelle's voice; no em-dashes) --------------------------------
-const reminderFriendly = (first) =>
+// Full-track reminders WARN about the auto-cancel (these bookings do get cancelled at 48h).
+const reminderFullR24 = (first) =>
+  `Hi ${first}, just a friendly reminder from Lumiere Luxe. We still need your new guest form to confirm your appointment, and it will be automatically canceled if we don't receive it. It only takes a couple minutes: ${NEW_GUEST_FORM_URL}`;
+const reminderFullR36 = (first) =>
+  `Hi ${first}, this is your final reminder from Lumiere Luxe. We still haven't received your new guest form, so your appointment will be automatically canceled soon if we don't get it. Please fill it out here to keep your spot: ${NEW_GUEST_FORM_URL}`;
+// Short-notice reminders do NOT threaten auto-cancel (these are never auto-cancelled; Michelle decides).
+const reminderShort1 = (first) =>
   `Hi ${first}, just a friendly reminder from Lumiere Luxe. We still need your new guest form to confirm your appointment, it only takes a couple minutes: ${NEW_GUEST_FORM_URL}`;
-const reminderFinal = (first) =>
+const reminderShort2 = (first) =>
   `Hi ${first}, quick heads up from Lumiere Luxe. We still haven't received your new guest form, and we need it to keep your appointment on the books. Please fill it out here so we can confirm you: ${NEW_GUEST_FORM_URL}`;
 const cancelText = (first) =>
   `Hi ${first}, since we didn't receive your new guest form we've had to release your appointment at Lumiere Luxe. We would still love to see you, just fill out the form and you can book again anytime: ${NEW_GUEST_FORM_URL}`;
@@ -332,8 +338,8 @@ export default async function handler(req, res) {
           await tellMichelle(michelle, `⏰ Heads up: *${slackEscape(name)}* booked for ${apptLabel} (under 48h out) and hasn't submitted the new guest form. I'll text reminders but I don't auto-cancel short-notice bookings. Your call on whether to keep or cancel them.`);
         } else {
           if (!e164) { out.action = `skip ${action}: no phone`; results.push(out); continue; }
-          const isFinal = action === 'r36' || action === 'sn2';
-          await sendQuoSms(e164, isFinal ? reminderFinal(first) : reminderFriendly(first));
+          const copy = { r24: reminderFullR24, r36: reminderFullR36, sn1: reminderShort1, sn2: reminderShort2 }[action];
+          await sendQuoSms(e164, copy(first));
           await appendMarker(customer.id, { r24: M.R24, r36: M.R36, sn1: M.SN1, sn2: M.SN2 }[action]);
         }
         out.done = true;
