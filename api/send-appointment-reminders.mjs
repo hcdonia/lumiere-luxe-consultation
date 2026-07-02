@@ -2,10 +2,11 @@ const SQUARE_BASE_URL = 'https://connect.squareup.com';
 const LOCATION_ID = 'LWJX3SDVSAD04';
 const JOTFORM_LINK = 'https://form.jotform.com/260438977572067';
 const SALON_TZ = 'America/Los_Angeles';
-const FIRE_HOUR_LOCAL = 19;
+const FIRE_HOUR_EVENING = 19; // 7pm LA: remind all of tomorrow's guests
+const FIRE_HOUR_MORNING = 8;  // 8am LA: catch guests still coming today who booked after last night's run
 
-const MESSAGE_BODY =
-  "Good evening from Lumiere Luxe, please fill out this form to make sure we can prepare for your salon visit today. " +
+const messageBody = (greeting) =>
+  `${greeting} from Lumiere Luxe, please fill out this form to make sure we can prepare for your salon visit today. ` +
   "We can't wait to see you and get you to your hair goals! " +
   JOTFORM_LINK;
 
@@ -81,9 +82,9 @@ function laHour(date) {
   return parseInt(fmt.format(date), 10);
 }
 
-// Returns ISO timestamps spanning "tomorrow" in salon-local time.
-// e.g. if it's Mon 7pm LA, this returns [Tue 00:00 LA, Wed 00:00 LA] as UTC ISO strings.
-function tomorrowRangeUtc(now) {
+// Returns ISO timestamps spanning the salon-local day `offsetDays` from today
+// (0 = today, 1 = tomorrow). e.g. offset 1 on Mon 7pm LA → [Tue 00:00 LA, Wed 00:00 LA].
+function dayRangeUtc(now, offsetDays) {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: SALON_TZ,
     year: 'numeric',
@@ -95,10 +96,14 @@ function tomorrowRangeUtc(now) {
   // Guard: never let a malformed date silently produce an Invalid Date (this is
   // what broke single-digit days like the 1st-9th when day was 'numeric').
   if (!/^\d{4}-\d{2}-\d{2}$/.test(todayLocal) || Number.isNaN(new Date(`${todayLocal}T00:00:00`).getTime())) {
-    throw new Error(`tomorrowRangeUtc: bad local date "${todayLocal}" from parts ${JSON.stringify(parts)}`);
+    throw new Error(`dayRangeUtc: bad local date "${todayLocal}" from parts ${JSON.stringify(parts)}`);
   }
-  const tomorrowMidnightLocal = new Date(`${todayLocal}T00:00:00`);
-  tomorrowMidnightLocal.setDate(tomorrowMidnightLocal.getDate() + 1);
+  const targetMidnightLocal = new Date(`${todayLocal}T00:00:00`);
+  targetMidnightLocal.setDate(targetMidnightLocal.getDate() + offsetDays);
+  // Derive the END from the NEXT local midnight (not start+24h) so DST-change
+  // days (23h/25h) still span exactly one salon-local day.
+  const nextMidnightLocal = new Date(`${todayLocal}T00:00:00`);
+  nextMidnightLocal.setDate(nextMidnightLocal.getDate() + offsetDays + 1);
 
   // Convert a "wall-clock" salon-local date to its UTC instant.
   const toUtcInstant = (wallClockLocalDate) => {
@@ -109,8 +114,8 @@ function tomorrowRangeUtc(now) {
     return new Date(guess.getTime() + offsetMs);
   };
 
-  const startUtc = toUtcInstant(tomorrowMidnightLocal);
-  const endUtc = new Date(startUtc.getTime() + 24 * 60 * 60 * 1000);
+  const startUtc = toUtcInstant(targetMidnightLocal);
+  const endUtc = toUtcInstant(nextMidnightLocal);
   return { startAtMin: startUtc.toISOString(), startAtMax: endUtc.toISOString() };
 }
 
@@ -152,14 +157,32 @@ export default async function handler(req, res) {
   const now = new Date();
   const force = req.query?.force === '1';
   const dry = req.query?.dry === '1';
+  const modeOverride = req.query?.mode; // 'morning' | 'evening' (testing)
 
   try {
   const hour = laHour(now);
-  if (hour !== FIRE_HOUR_LOCAL && !force) {
-    return res.status(200).json({ skipped: `LA hour is ${hour}, waiting for ${FIRE_HOUR_LOCAL}` });
+  let mode;
+  if (modeOverride === 'morning' || modeOverride === 'evening') mode = modeOverride;
+  else if (hour === FIRE_HOUR_EVENING) mode = 'evening';
+  else if (hour === FIRE_HOUR_MORNING) mode = 'morning';
+  if (!mode) {
+    if (!force) {
+      return res.status(200).json({ skipped: `LA hour is ${hour}, waiting for ${FIRE_HOUR_MORNING} or ${FIRE_HOUR_EVENING}` });
+    }
+    mode = 'evening';
   }
 
-  const { startAtMin, startAtMax } = tomorrowRangeUtc(now);
+  // Evening run reminds ALL of tomorrow's guests. Morning run catches anyone
+  // still coming TODAY who booked after last night's run — the [REMINDED:] note
+  // marker skips anyone already texted, so nobody is double-texted.
+  let startAtMin, startAtMax;
+  if (mode === 'morning') {
+    startAtMin = now.toISOString();                    // only upcoming appts (never a past one)
+    startAtMax = dayRangeUtc(now, 1).startAtMin;        // ...through end of today (tomorrow 00:00 LA)
+  } else {
+    ({ startAtMin, startAtMax } = dayRangeUtc(now, 1)); // all of tomorrow
+  }
+  const messageText = messageBody(mode === 'morning' ? 'Good morning' : 'Good evening');
 
   const bookings = await searchBookings(startAtMin, startAtMax);
 
@@ -205,7 +228,7 @@ export default async function handler(req, res) {
         continue;
       }
 
-      await sendQuoSms(normalizedPhone, MESSAGE_BODY);
+      await sendQuoSms(normalizedPhone, messageText);
 
       const newNote = existingNote ? `${existingNote}\n${marker}` : marker;
       await updateCustomerNote(customer.id, newNote);
@@ -225,7 +248,7 @@ export default async function handler(req, res) {
   // Log COUNTS only (failed.length, not failed) so client phone numbers never
   // land in Vercel logs. PII stays in the email to Hunter's own inbox.
   console.log('[reminders] summary ' + JSON.stringify({
-    dry, total: bookings.length, sent, failed: failed.length,
+    mode, dry, total: bookings.length, sent, failed: failed.length,
     window: { startAtMin, startAtMax },
   }));
 
@@ -241,6 +264,7 @@ export default async function handler(req, res) {
 
   return res.status(200).json({
     ran: true,
+    mode,
     dry,
     window: { startAtMin, startAtMax },
     total: bookings.length,
