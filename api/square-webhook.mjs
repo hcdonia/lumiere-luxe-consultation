@@ -1,4 +1,11 @@
 import { createHmac, timingSafeEqual } from 'crypto';
+import {
+  WELCOME_PACKET_READY,
+  HAS_PACKET_MARKER,
+  isMichelleBooking,
+  deliverWelcomePacket,
+  markPacketSent,
+} from '../lib/welcome-packet.mjs';
 
 // Read the raw request body ourselves so we can verify Square's HMAC signature
 // (which is computed over the exact bytes). Without this Vercel would parse the
@@ -532,7 +539,39 @@ export default async function handler(req, res) {
       }
     }
 
-    return res.status(200).json({ received: true, ...slackResult, nudge });
+    // --- Welcome packet (immediate path) ----------------------------------
+    // A new guest booking for Michelle who ALREADY has the new-guest form on file
+    // gets the welcome packet right now. A guest who still owes the form does NOT
+    // get it here (they'd have two links at once); send-welcome-packets.mjs sends
+    // it once they complete the form. One packet per guest ([WELCOMEPACKET:]).
+    let packet = { skipped: 'n/a' };
+    try {
+      if (isCreatedEvent && bookingActive && isMichelleBooking(segment.team_member_id) && onFile) {
+        if (!WELCOME_PACKET_READY) {
+          packet = { skipped: 'packet url not set' };
+        } else {
+          const fresh = await getCustomer(customerId);
+          if (HAS_PACKET_MARKER(fresh?.note)) {
+            packet = { skipped: 'already sent' };
+          } else {
+            const r = await deliverWelcomePacket(customer);
+            if (r.sent) {
+              // Only report as done once the dedup marker is confirmed on file, so
+              // the hourly cron can never re-send this packet.
+              const marked = await markPacketSent(customerId, bookingId);
+              packet = { sent: true, channel: r.channel, ...(marked ? {} : { markerWarning: true }) };
+            } else {
+              packet = { skipped: r.reason };
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.error('[packet] webhook send failed:', err.message);
+      packet = { error: true };
+    }
+
+    return res.status(200).json({ received: true, ...slackResult, nudge, packet });
   } catch (err) {
     // Return 200 (no Square retry) but never leak internals to the caller.
     console.error('Webhook processing error:', err.message);
