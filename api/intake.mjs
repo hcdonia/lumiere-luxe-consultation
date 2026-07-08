@@ -7,8 +7,13 @@ export default async function handler(req, res) {
     req.body?.submissionId ||
     req.body?.submission_id;
 
+  // Google Ads click id, passed through from lumiereluxesalon.com via the JotForm redirect.
+  const gclid = req.query.gclid || req.body?.gclid || '';
+
   if (submissionID) {
-    res.redirect(302, `/?submissionID=${submissionID}`);
+    const params = new URLSearchParams({ submissionID });
+    if (gclid) params.set('gclid', gclid);
+    res.redirect(302, `/?${params.toString()}`);
   } else {
     res.redirect(302, '/');
   }

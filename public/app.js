@@ -1,3 +1,20 @@
+// --- Google Ads conversion tracking ---
+// The gclid rides in this page's URL (captured on lumiereluxesalon.com and passed
+// through the JotForm), so the Google tag attributes these events to the ad click
+// automatically. Both calls are guarded so tracking can never break the booking flow.
+const GA_LEAD = 'AW-18175148301/fgW0CLu-18wcEI2Cy9pD';
+const GA_BOOKING = 'AW-18175148301/a1boCL6-18wcEI2Cy9pD';
+
+function fireConversion(sendTo) {
+  try {
+    if (typeof window.gtag === 'function') {
+      window.gtag('event', 'conversion', { send_to: sendTo });
+    }
+  } catch (e) {
+    // Never let a tracking error interrupt the user's experience.
+  }
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
   const params = new URLSearchParams(window.location.search);
   const submissionID = params.get('submissionID');
@@ -22,6 +39,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     const recommendation = await recommendResponse.json();
+
+    // Consultation completed → count a Lead (covers both the standard and extensions paths).
+    // Guard on a real recommendation shape so a soft/empty 200 can never inflate leads.
+    if (recommendation && (recommendation.flow === 'extensions' || recommendation.serviceName)) {
+      fireConversion(GA_LEAD);
+    }
 
     // Extensions flow: skip the AI recommendation UI entirely.
     if (recommendation.flow === 'extensions') {
@@ -432,6 +455,7 @@ async function handleExtensionsPay() {
       timeZone: 'America/Los_Angeles',
     });
     document.getElementById('ext-confirmed-time').textContent = human;
+    fireConversion(GA_BOOKING); // paid $35 deposit + slot booked
     showState('extensions-confirmed');
   } catch (err) {
     console.error('Pay error:', err);
