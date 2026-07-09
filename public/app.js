@@ -1,9 +1,10 @@
 // --- Google Ads conversion tracking ---
 // The gclid rides in this page's URL (captured on lumiereluxesalon.com and passed
-// through the JotForm), so the Google tag attributes these events to the ad click
-// automatically. Both calls are guarded so tracking can never break the booking flow.
+// through the JotForm), so the Google tag attributes the Lead to the ad click
+// automatically. This call is guarded so tracking can never break the booking flow.
+// Bookings — including the $35 extensions deposit — are tracked server-side via the
+// Square webhook → Google Ads offline import, so there is deliberately no booking pixel here.
 const GA_LEAD = 'AW-18175148301/fgW0CLu-18wcEI2Cy9pD';
-const GA_BOOKING = 'AW-18175148301/a1boCL6-18wcEI2Cy9pD';
 
 function fireConversion(sendTo) {
   try {
@@ -455,7 +456,7 @@ async function handleExtensionsPay() {
       timeZone: 'America/Los_Angeles',
     });
     document.getElementById('ext-confirmed-time').textContent = human;
-    fireConversion(GA_BOOKING); // paid $35 deposit + slot booked
+    // Booking is tracked server-side (Square webhook → Google Ads offline import), not here.
     showState('extensions-confirmed');
   } catch (err) {
     console.error('Pay error:', err);

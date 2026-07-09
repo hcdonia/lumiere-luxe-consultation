@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from 'crypto';
+import { createHash, createHmac, timingSafeEqual } from 'crypto';
 import {
   WELCOME_PACKET_READY,
   HAS_PACKET_MARKER,
@@ -39,6 +39,11 @@ const clean = (v) => (v || '').replace(/﻿/g, '').replace(/\\n/g, '').trim();
 const JOTFORM_KEY = clean(process.env.JOTFORM_API_KEY);
 const OPENPHONE_API_KEY = clean(process.env.OPENPHONE_API_KEY);
 const OPENPHONE_FROM_NUMBER = clean(process.env.OPENPHONE_FROM_NUMBER);
+
+// Google Ads conversion sheet (Apps Script web app URL + shared secret). When
+// unset, sendBookingConversion() is a no-op, so this stays safe until wired up.
+const SHEETS_WEBHOOK_URL = clean(process.env.GOOGLE_SHEETS_WEBHOOK_URL);
+const SHEETS_WEBHOOK_SECRET = clean(process.env.GOOGLE_SHEETS_WEBHOOK_SECRET);
 
 async function squareGet(path) {
   const res = await fetch(`${SQUARE_BASE_URL}${path}`, {
@@ -188,6 +193,66 @@ function last10(raw) {
   if (!raw) return null;
   const digits = String(raw).replace(/\D/g, '');
   return digits.length >= 10 ? digits.slice(-10) : null;
+}
+
+// --- Google Ads conversion (Square booking) ------------------------------
+// Hash + send new-guest bookings to a Google Sheet, which Data Manager imports
+// into Google Ads as "Square Booking" conversions (matched by hashed email/
+// phone — enhanced conversions for leads). Self-contained and guarded; a
+// failure here must never affect the Slack/SMS/packet flow.
+
+// SHA-256 hex of a UTF-8 string, per Google's enhanced-conversions spec.
+function sha256Hex(value) {
+  return createHash('sha256').update(value, 'utf8').digest('hex');
+}
+
+// Normalize (lowercase + trim) and hash an email. '' if none.
+function hashEmail(email) {
+  const e = (email || '').trim().toLowerCase();
+  return e ? sha256Hex(e) : '';
+}
+
+// Normalize a phone to E.164 then hash. '' if unusable.
+function hashPhone(phone) {
+  const e164 = toE164(phone);
+  return e164 ? sha256Hex(e164) : '';
+}
+
+// Post one booking to the conversion sheet. Never throws.
+async function sendBookingConversion(customer, booking) {
+  if (!SHEETS_WEBHOOK_URL || !SHEETS_WEBHOOK_SECRET) return; // not configured yet
+  const email = hashEmail(customer.email_address);
+  const phone = hashPhone(customer.phone_number);
+  if (!email && !phone) return; // nothing for Google to match on
+
+  const payload = {
+    secret: SHEETS_WEBHOOK_SECRET,
+    conversionName: 'Square Booking',
+    conversionTime: booking.created_at || new Date().toISOString(),
+    email,
+    phone,
+    gclid: '', // not stored on the Square customer today — email/phone match instead
+    value: '',
+    currency: '',
+    orderId: booking.id || '',
+  };
+
+  // Hard 5s cap so a slow/hung Apps Script can never delay the Slack/SMS/packet
+  // work that runs after this in the handler.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5000);
+  try {
+    const res = await fetch(SHEETS_WEBHOOK_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      redirect: 'follow', // Apps Script web apps 302 to script.googleusercontent.com
+      signal: controller.signal,
+    });
+    if (!res.ok) console.error(`[conversion] sheet POST ${res.status}`);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 async function sendQuoSms(toPhone, content) {
@@ -400,6 +465,18 @@ export default async function handler(req, res) {
 
     const note = customer.note || '';
     const hasExtensionsDeposit = note.includes('DEPOSIT PAID');
+
+    // --- Google Ads conversion (Square booking) --------------------------
+    // Count every new Square booking as a conversion in Google Ads, matched by
+    // hashed email/phone. This is the single source of truth for bookings —
+    // including the $35 extensions deposit (which is itself a Square booking). It
+    // replaced the old client-side booking pixel. Fires once, on booking.created,
+    // for active bookings, and is fully guarded so a tracking failure can never
+    // interrupt the guest-facing flow below.
+    if (isCreatedEvent && NUDGE_ACTIVE_STATUSES.has(booking.status)) {
+      try { await sendBookingConversion(customer, booking); }
+      catch (err) { console.error('[conversion] send failed:', err.message); }
+    }
 
     // --- Reliable "did they submit the new-guest form?" detection ----------
     // The old note-only check ("Hair Consultation") went stale when the
