@@ -17,6 +17,7 @@
     { "path": "/api/send-appointment-reminders", "schedule": "0 15 * * *" },
     { "path": "/api/send-appointment-reminders", "schedule": "0 16 * * *" },
     { "path": "/api/escalate-new-guest-forms", "schedule": "0 */4 * * *" },
-    { "path": "/api/send-welcome-packets", "schedule": "30 * * * *" }
+    { "path": "/api/send-welcome-packets", "schedule": "30 * * * *" },
+    { "path": "/api/sync-square-conversions", "schedule": "0 13 * * *" }
   ]
 }
