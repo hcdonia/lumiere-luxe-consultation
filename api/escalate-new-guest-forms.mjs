@@ -76,6 +76,14 @@ async function squarePut(path, body) {
   });
   return res.json();
 }
+async function squarePost(path, body) {
+  const res = await fetch(`${SQUARE_BASE_URL}${path}`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${process.env.SQUARE_ACCESS_TOKEN}`, 'Content-Type': 'application/json', 'Square-Version': '2025-03-19' },
+    body: JSON.stringify(body),
+  });
+  return res.json();
+}
 async function getCustomer(customerId) { return (await squareGet(`/v2/customers/${customerId}`)).customer; }
 async function getBooking(bookingId) { return (await squareGet(`/v2/bookings/${bookingId}`)).booking; }
 async function cancelBooking(bookingId, version) {
@@ -166,6 +174,94 @@ const nameInSubmissions = (customer, formIndex) => {
 function isNewCustomer(customer, bookingCreatedAt) {
   const diffMin = Math.abs(new Date(bookingCreatedAt) - new Date(customer.created_at)) / 6e4;
   return diffMin <= NEW_CUSTOMER_THRESHOLD_MINUTES;
+}
+
+// A returning client can still look brand new: Square's online booking / booking-request
+// flow creates a FRESH customer record when they re-enter their info, even if they've been
+// in for years. That fresh record trips isNewCustomer(), so without this guard we'd chase a
+// real existing client for the new-guest form and eventually auto-cancel them.
+//
+// Layered so a returning client can never slip through:
+//   1. buildCustomerIndex() maps EVERY customer by phone, email, AND first+last name to the
+//      earliest record for that key. returningMatch() flags the guest if ANY of those keys
+//      already existed before their record — a match on any one of the four fields is enough.
+//   2. The index build fails CLOSED: if it can't page the full customer list, the whole run is
+//      skipped (no texts, no cancels), so a broken lookup can never fabricate a "new guest".
+//   3. returningByLiveSearch() is a fresh, independent live re-check run right before the
+//      irreversible cancel; if it finds an older record OR errors, the cancel is aborted.
+const RETURNING_MARGIN_MS = 10 * 60 * 1000; // an "older" record must predate this one by >10 min
+
+async function buildCustomerIndex() {
+  const MAX_PAGES = 200; // 200 * 100 = 20k customers; guards against an unbounded loop
+  const byPhone = new Map(), byEmail = new Map(), byName = new Map();
+  const addEarliest = (map, key, ms) => {
+    if (!key || Number.isNaN(ms)) return;
+    const prev = map.get(key);
+    if (prev === undefined || ms < prev) map.set(key, ms);
+  };
+  try {
+    let cursor;
+    for (let page = 0; page < MAX_PAGES; page++) {
+      const body = { limit: 100 };
+      if (cursor) body.cursor = cursor;
+      const data = await squarePost('/v2/customers/search', body);
+      if (data.errors) { console.error('[escalate] customer index error:', JSON.stringify(data.errors)); return { ok: false }; }
+      for (const c of data.customers || []) {
+        const ms = new Date(c.created_at).getTime();
+        addEarliest(byPhone, last10(c.phone_number), ms);
+        addEarliest(byEmail, (c.email_address || '').toLowerCase() || null, ms);
+        addEarliest(byName, nameKey(c.given_name, c.family_name), ms);
+      }
+      cursor = data.cursor;
+      if (!cursor) return { ok: true, byPhone, byEmail, byName };
+    }
+    console.error('[escalate] customer index exceeded MAX_PAGES — failing closed');
+    return { ok: false };
+  } catch (e) {
+    console.error('[escalate] customer index threw:', e.message);
+    return { ok: false };
+  }
+}
+
+// Returns which field matched an OLDER record ('phone' | 'email' | 'name'), or null.
+function returningMatch(customer, index) {
+  const created = new Date(customer.created_at).getTime();
+  if (Number.isNaN(created)) return null;
+  const older = (ms) => ms !== undefined && ms < created - RETURNING_MARGIN_MS;
+  if (older(index.byPhone.get(last10(customer.phone_number)))) return 'phone';
+  if (older(index.byEmail.get((customer.email_address || '').toLowerCase() || null))) return 'email';
+  if (older(index.byName.get(nameKey(customer.given_name, customer.family_name)))) return 'name';
+  return null;
+}
+
+// Independent last-line fallback used right before an irreversible cancel. Live-searches Square
+// by phone and email for an older record. Returns the matched field, or 'lookup-error' so the
+// caller can DEFER the cancel (never cancel on an inconclusive check), or null if truly clear.
+async function returningByLiveSearch(customer) {
+  const p10 = last10(customer.phone_number);
+  const email = (customer.email_address || '').toLowerCase();
+  if (!p10 && !email) return null;
+  const created = new Date(customer.created_at).getTime();
+  const filters = [];
+  if (p10) filters.push(['phone', { phone_number: { fuzzy: p10 } }]);
+  if (email) filters.push(['email', { email_address: { fuzzy: email } }]);
+  try {
+    for (const [field, filter] of filters) {
+      const data = await squarePost('/v2/customers/search', { query: { filter }, limit: 50 });
+      if (data.errors) { console.error('[escalate] live returning search error:', JSON.stringify(data.errors)); return 'lookup-error'; }
+      for (const c of data.customers || []) {
+        if (c.id === customer.id) continue;
+        const cp10 = last10(c.phone_number), cemail = (c.email_address || '').toLowerCase();
+        const match = (p10 && cp10 === p10) || (email && cemail === email);
+        if (!match) continue;
+        if (new Date(c.created_at).getTime() < created - RETURNING_MARGIN_MS) return field;
+      }
+    }
+  } catch (e) {
+    console.error('[escalate] live returning search threw:', e.message);
+    return 'lookup-error';
+  }
+  return null;
 }
 
 // --- Messaging ------------------------------------------------------------
@@ -264,6 +360,15 @@ export default async function handler(req, res) {
       return res.status(200).json({ ran: true, skipped: 'jotform lookup failed (failed closed)' });
     }
 
+    // Returning-client index (phone/email/name). Fails CLOSED: without a complete customer
+    // list we can't be sure a "new guest" isn't a returning client, so we take no actions.
+    const customerIndex = await buildCustomerIndex();
+    if (!customerIndex.ok) {
+      await sendAlertEmail('Lumiere Luxe: escalation sweep skipped (customer index failed)',
+        `The new-guest escalation sweep could not build a complete customer index, so it took NO actions this run (to avoid chasing or cancelling an existing client). Time (UTC): ${now.toISOString()}`);
+      return res.status(200).json({ ran: true, skipped: 'customer index failed (failed closed)' });
+    }
+
     const bookings = await searchUpcomingBookings(now);
     const michelle = await findSlackUser('Michelle Sanders');
 
@@ -281,6 +386,8 @@ export default async function handler(req, res) {
         if (!customer) { out.skip = 'customer not found'; results.push(out); continue; }
         if (!isNewCustomer(customer, b.created_at)) { out.skip = 'not a new guest'; results.push(out); continue; }
         if (await hasFormOnFile(customer, formIndex)) { out.skip = 'has form'; results.push(out); continue; }
+        const rmatch = returningMatch(customer, customerIndex);
+        if (rmatch) { out.skip = `returning client (older record matches ${rmatch})`; results.push(out); continue; }
 
         const hoursSince = (now - new Date(b.created_at)) / 36e5;
         const hoursUntilAppt = (new Date(b.start_at) - now) / 36e5;
@@ -322,6 +429,13 @@ export default async function handler(req, res) {
           if (new Date(fb.start_at) <= now) { out.action = 'appt passed'; results.push(out); continue; }
           const fc = (await getCustomer(b.customer_id)) || customer;
           if (await hasFormOnFile(fc, freshIdx)) { out.action = 'skip: form now on file'; results.push(out); continue; }
+          // Two independent returning-client nets before the irreversible cancel: the run's
+          // index, plus a fresh live search. A live lookup error DEFERS (never cancels blind).
+          const idxMatch = returningMatch(fc, customerIndex);
+          if (idxMatch) { out.action = `skip: returning client (older record matches ${idxMatch})`; results.push(out); continue; }
+          const liveMatch = await returningByLiveSearch(fc);
+          if (liveMatch === 'lookup-error') { out.action = 'cancel deferred: returning-client recheck failed'; results.push(out); continue; }
+          if (liveMatch) { out.action = `skip: returning client (live match ${liveMatch})`; results.push(out); continue; }
           if (nameInSubmissions(fc, freshIdx)) {
             // Name in submissions but no phone/email match — likely a different contact
             // on file. Do NOT auto-cancel; hand to Michelle.
