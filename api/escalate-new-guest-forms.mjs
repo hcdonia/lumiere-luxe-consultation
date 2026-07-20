@@ -42,6 +42,7 @@ const OPENPHONE_FROM_NUMBER = clean(process.env.OPENPHONE_FROM_NUMBER);
 
 const M = {
   R24: '[NGF-R24]', R36: '[NGF-R36]', CANCELLED: '[NGF-CANCELLED]', NAMEHOLD: '[NGF-NAMEHOLD]',
+  PENDINGHOLD: '[NGF-PENDING-HOLD]',
   SN1: '[NGF-SN1]', SN2: '[NGF-SN2]', SN_NOTIFY: '[NGF-SN-NOTIFY]',
 };
 // Actions that send an SMS to the guest are held to business hours; Slack-only is not.
@@ -405,7 +406,7 @@ export default async function handler(req, res) {
         if (fullTrack) {
           const cancelReady = hoursSince >= CANCEL_H || hoursUntilAppt <= OVERNIGHT_SAFETY_H;
           const hasReminder = note.includes(M.R24) || note.includes(M.R36);
-          const held = note.includes(M.CANCELLED) || note.includes(M.NAMEHOLD);
+          const held = note.includes(M.CANCELLED) || note.includes(M.NAMEHOLD) || note.includes(M.PENDINGHOLD);
           if (cancelReady && (hasReminder || hoursUntilAppt <= 6) && !held) action = 'cancel';
           else if ((hoursSince >= R36_H || cancelReady) && !note.includes(M.R36) && !held) action = 'r36';
           else if (hoursSince >= R24_H && !note.includes(M.R24) && !held) action = 'r24';
@@ -443,6 +444,16 @@ export default async function handler(req, res) {
             await tellMichelle(michelle, `⚠️ *${slackEscape(name)}* is at ${Math.round(hoursSince)}h with no new-guest form match, but their name appears in your form submissions. They may have filled it out with a different phone or email, so I did NOT auto-cancel. Please check and cancel manually if needed. Appt: ${apptLabel}.`);
             out.action = 'name-hold -> michelle'; results.push(out); continue;
           }
+          // A PENDING booking is a customer request Michelle hasn't accepted yet. Square's
+          // CancelBooking endpoint rejects it for a SELLER token (409 "Cannot cancel a booking
+          // with status pending" — sellers can only cancel ACCEPTED bookings), and there's no
+          // API to decline a request. So we can't auto-release it; hand it to Michelle to decline
+          // in Square, and mark it held so we don't retry the doomed cancel every 4h.
+          if (fb.status === 'PENDING') {
+            await appendMarker(fc.id, M.PENDINGHOLD);
+            await tellMichelle(michelle, `⚠️ Heads up: *${slackEscape(name)}* booked ${Math.round(hoursSince)}h ago and never submitted the new guest form, so I tried to cancel their appointment. I couldn't, because it's still an unaccepted online booking request (PENDING) and Square won't let the app cancel one of those. You'll need to decline it yourself in Square if you don't want to keep them. Appt: ${apptLabel}. Their number: ${e164 || 'n/a'}.`);
+            out.action = 'pending-hold -> michelle'; results.push(out); continue;
+          }
           await cancelBooking(fb.id, fb.version);
           await appendMarker(fc.id, M.CANCELLED);
           if (e164) { try { await sendQuoSms(e164, cancelText(first)); } catch (e) { console.error('[escalate] cancel text failed:', e.message); } }
@@ -471,7 +482,7 @@ export default async function handler(req, res) {
       candidates: results.filter((r) => r.track).length,
       cancelled: acted.filter((r) => r.action === 'cancel').length,
       reminders: acted.filter((r) => ['r24', 'r36', 'sn1', 'sn2'].includes(r.action)).length,
-      michelleNotified: results.filter((r) => r.action === 'sn_notify' || r.action === 'cancel' || r.action === 'name-hold -> michelle').length,
+      michelleNotified: results.filter((r) => r.action === 'sn_notify' || r.action === 'cancel' || r.action === 'name-hold -> michelle' || r.action === 'pending-hold -> michelle').length,
     }));
 
     return res.status(200).json({ ran: true, dry, businessHours: inBusinessHours, total: bookings.length, results: results.filter((r) => r.track) });
