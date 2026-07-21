@@ -2,7 +2,7 @@
 // Michelle's Kit tags so you can confirm the key works and the subscriber shows
 // up (with the right tag) in her Kit account.
 //
-// Usage (needs KIT_API_SECRET or KIT_API_KEY in the env file):
+// Usage (needs KIT_API_KEY in the env file):
 //   node --env-file=.env.local scripts/probe-kit.mjs you+test@example.com new-client
 //   node --env-file=.env.local scripts/probe-kit.mjs you+test@example.com halo-interested
 //
@@ -37,7 +37,7 @@ async function main() {
     process.exit(1);
   }
 
-  console.log(`KIT key present: ${KIT_READY ? 'yes' : 'NO (set KIT_API_SECRET or KIT_API_KEY)'}`);
+  console.log(`KIT key present: ${KIT_READY ? 'yes' : 'NO (set KIT_API_KEY)'}`);
   console.log(`Tagging ${email} -> ${tagName} (tag ${tagId})...\n`);
 
   const result = await tagSubscriber(tagId, {
@@ -48,7 +48,7 @@ async function main() {
 
   console.log(JSON.stringify(result, null, 2));
   if (!result.ok) {
-    console.log('\nNot tagged. If skipped=no-kit-key, add Michelle\'s KIT_API_SECRET/KIT_API_KEY to the env file first.');
+    console.log('\nNot tagged. If skipped=no-kit-key, add Michelle\'s KIT_API_KEY to the env file first.');
     process.exit(result.skipped ? 0 : 1);
   }
   console.log('\nSuccess — check the subscriber in Michelle\'s Kit account for the tag.');
