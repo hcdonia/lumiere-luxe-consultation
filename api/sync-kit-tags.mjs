@@ -41,6 +41,10 @@ async function recentSubmissions(formId) {
   );
   if (!res.ok) throw new Error(`Jotform HTTP ${res.status}`);
   const data = await res.json();
+  // Jotform can return HTTP 200 with responseCode 401 (bad/expired key) and null
+  // content — fail loud so it lands in the per-form error summary instead of
+  // silently reconciling nothing.
+  if (data.responseCode !== 200) throw new Error(`Jotform responseCode ${data.responseCode}`);
   return data.content || [];
 }
 

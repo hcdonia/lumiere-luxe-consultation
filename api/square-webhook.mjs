@@ -416,6 +416,44 @@ export default async function handler(req, res) {
       return res.status(401).json({ error: 'invalid signature' });
     }
 
+    // --- Kit "New Client" tag: fire on ANY new Square customer ------------
+    // Michelle wants every brand-new customer in her Kit list immediately, to
+    // nurture and convert non-booked leads by email. customer.created fires for
+    // every new customer by any route: online bookers, walk-ins/manual adds, and
+    // the profiles the app itself creates (consultation form -> create-customer,
+    // $35 deposit -> extensions-book). Returning guests are an UPDATE, not a
+    // create, so they never re-fire. This is the faithful replacement for the old
+    // "Send New Customers in Square to Kit" zap (no filter). Idempotent +
+    // fail-soft + no-ops until the KIT key is set.
+    if (event.type === 'customer.created') {
+      let kit = { skipped: 'n/a' };
+      try {
+        const c = event.data?.object?.customer || {};
+        let email = c.email_address;
+        let firstName = c.given_name;
+        let lastName = c.family_name;
+        // The creation event usually carries these, but re-fetch if email is
+        // missing (Kit needs an email; some Square customers are phone-only).
+        if (!email) {
+          const custId = c.id || event.data?.id;
+          if (custId) {
+            const full = await getCustomer(custId);
+            email = full?.email_address;
+            firstName = full?.given_name || firstName;
+            lastName = full?.family_name || lastName;
+          }
+        }
+        if (!email) {
+          return res.status(200).json({ received: true, event: 'customer.created', skipped: 'no email on customer' });
+        }
+        kit = await tagSubscriber(KIT_TAG_NEW_CLIENT, { email, firstName, lastName });
+      } catch (err) {
+        console.error('[kit] customer.created tag failed:', err.message);
+        kit = { error: true };
+      }
+      return res.status(200).json({ received: true, event: 'customer.created', kit });
+    }
+
     // Only handle booking events
     if (event.type !== 'booking.created' && event.type !== 'booking.updated') {
       return res.status(200).json({ received: true, skipped: `not a booking event: ${event.type}` });
@@ -477,29 +515,6 @@ export default async function handler(req, res) {
     if (isCreatedEvent && NUDGE_ACTIVE_STATUSES.has(booking.status)) {
       try { await sendBookingConversion(customer, booking); }
       catch (err) { console.error('[conversion] send failed:', err.message); }
-    }
-
-    // --- Kit "New Client" tag (migrated from Zapier) ----------------------
-    // Add every genuinely-new Square customer to Michelle's Kit "New Client" tag
-    // on their first booking, which kicks off her Kit welcome/nurture sequence.
-    // This replaces TWO old zaps (Square new-customer, plus the now-stale
-    // new-guest-intake-form trigger). By here the customer is already known to be
-    // new (the isNewCustomer guard above returned otherwise). Fires once, on
-    // booking.created, for ANY stylist (the old zap was not Michelle-only), and
-    // is fully guarded + idempotent + no-ops until the KIT key is set, so it can
-    // never disturb the Slack/SMS/packet flow below.
-    let kitNewClient = { skipped: 'n/a' };
-    if (isCreatedEvent && customer.email_address) {
-      try {
-        kitNewClient = await tagSubscriber(KIT_TAG_NEW_CLIENT, {
-          email: customer.email_address,
-          firstName: customer.given_name,
-          lastName: customer.family_name,
-        });
-      } catch (err) {
-        console.error('[kit] new-client tag failed:', err.message);
-        kitNewClient = { error: true };
-      }
     }
 
     // --- Reliable "did they submit the new-guest form?" detection ----------
@@ -672,7 +687,7 @@ export default async function handler(req, res) {
       packet = { error: true };
     }
 
-    return res.status(200).json({ received: true, ...slackResult, nudge, packet, kit: kitNewClient });
+    return res.status(200).json({ received: true, ...slackResult, nudge, packet });
   } catch (err) {
     // Return 200 (no Square retry) but never leak internals to the caller.
     console.error('Webhook processing error:', err.message);

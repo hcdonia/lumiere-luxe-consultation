@@ -37,9 +37,14 @@ is a safe no-op).
 - **Tag IDs** (hardcoded in `lib/kit.mjs`, from Michelle's account): New Client `3580905`,
   Halo Couture- Interested `5640850`, Halo Couture- Signed Agreement `5640848`.
 - **Triggers:**
-  - *New Client* → `api/square-webhook.mjs`, on a new customer's first booking (`isCreatedEvent` +
-    `isNewCustomer`), any stylist. Replaces the old Square-new-customer zap AND the stale
-    New-Guest-Intake-form zap (that form, `212805390003141`, went quiet in Apr 2026).
+  - *New Client* → `api/square-webhook.mjs`, on the Square **`customer.created`** event (any new
+    customer, no filter — matches the old zap exactly). Michelle wants every new customer in her Kit
+    list immediately to nurture/convert non-booked leads. Fires for online bookers, walk-ins/manual
+    adds, AND app-created profiles (consultation form → `create-customer.mjs`; $35 deposit →
+    `extensions-book.mjs`); returning guests are an update, not a create, so they never re-fire. The
+    Square webhook subscription (`wbhk_e3a6670b38c04fd49a1cc881bdbfffe8`) is subscribed to
+    `booking.created`, `booking.updated`, `customer.created`. Replaces both the old Square-new-customer
+    zap and the stale New-Guest-Intake-form zap (`212805390003141`, quiet since Apr 2026).
   - *Halo Interested / Signed Agreement* → `api/jotform-kit-webhook.mjs`, a Jotform webhook receiver
     for forms `243147261286053` and `250136134986055`. Gated by `?token=<JOTFORM_WEBHOOK_SECRET>`
     (Jotform can't sign webhooks). Re-fetches the submission from the Jotform API, then tags.

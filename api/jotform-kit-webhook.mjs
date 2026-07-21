@@ -80,7 +80,10 @@ export default async function handler(req, res) {
   // Shared-secret token. Enforced only when the secret is configured, so the
   // endpoint still works before JOTFORM_WEBHOOK_SECRET is set in Vercel.
   if (WEBHOOK_SECRET) {
-    const token = clean(req.query?.token);
+    // A duplicated ?token=a&token=b makes req.query.token an array; normalize to
+    // the first value so clean() can't throw a TypeError (which would 500).
+    const rawToken = req.query?.token;
+    const token = clean(Array.isArray(rawToken) ? rawToken[0] : rawToken);
     if (token !== WEBHOOK_SECRET) {
       return res.status(401).json({ error: 'invalid token' });
     }
