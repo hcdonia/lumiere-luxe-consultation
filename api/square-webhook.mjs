@@ -6,6 +6,7 @@ import {
   deliverWelcomePacket,
   markPacketSent,
 } from '../lib/welcome-packet.mjs';
+import { tagSubscriber, KIT_TAG_NEW_CLIENT } from '../lib/kit.mjs';
 
 // Read the raw request body ourselves so we can verify Square's HMAC signature
 // (which is computed over the exact bytes). Without this Vercel would parse the
@@ -478,6 +479,29 @@ export default async function handler(req, res) {
       catch (err) { console.error('[conversion] send failed:', err.message); }
     }
 
+    // --- Kit "New Client" tag (migrated from Zapier) ----------------------
+    // Add every genuinely-new Square customer to Michelle's Kit "New Client" tag
+    // on their first booking, which kicks off her Kit welcome/nurture sequence.
+    // This replaces TWO old zaps (Square new-customer, plus the now-stale
+    // new-guest-intake-form trigger). By here the customer is already known to be
+    // new (the isNewCustomer guard above returned otherwise). Fires once, on
+    // booking.created, for ANY stylist (the old zap was not Michelle-only), and
+    // is fully guarded + idempotent + no-ops until the KIT key is set, so it can
+    // never disturb the Slack/SMS/packet flow below.
+    let kitNewClient = { skipped: 'n/a' };
+    if (isCreatedEvent && customer.email_address) {
+      try {
+        kitNewClient = await tagSubscriber(KIT_TAG_NEW_CLIENT, {
+          email: customer.email_address,
+          firstName: customer.given_name,
+          lastName: customer.family_name,
+        });
+      } catch (err) {
+        console.error('[kit] new-client tag failed:', err.message);
+        kitNewClient = { error: true };
+      }
+    }
+
     // --- Reliable "did they submit the new-guest form?" detection ----------
     // The old note-only check ("Hair Consultation") went stale when the
     // consultation moved to a Square custom attribute, so check every signal:
@@ -648,7 +672,7 @@ export default async function handler(req, res) {
       packet = { error: true };
     }
 
-    return res.status(200).json({ received: true, ...slackResult, nudge, packet });
+    return res.status(200).json({ received: true, ...slackResult, nudge, packet, kit: kitNewClient });
   } catch (err) {
     // Return 200 (no Square retry) but never leak internals to the caller.
     console.error('Webhook processing error:', err.message);
