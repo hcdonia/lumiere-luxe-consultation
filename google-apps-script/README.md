@@ -1,13 +1,23 @@
 # Mastermind → Michelle's calendar sync (Google Apps Script)
 
-Auto-copies Hunter's **Mastermind** Google Calendar into a calendar Michelle
-**owns** (`Mastermind (Hunter)`), so she can mark events Busy/Free and sync that
-calendar to **Square Appointments**. Runs hourly inside Michelle's Google account.
+Auto-copies Hunter's **Mastermind** Google Calendar into Michelle's **primary**
+calendar as events she **owns**, so they block her availability in **Square
+Appointments** (and she can mark any Busy/Free). Runs hourly inside her Google account.
 
-Why a mirror and not a plain subscription: a *subscribed* calendar is read-only
-(can't set Busy/Free), and Square won't reliably sync a calendar that's only
-shared to you from another account. The events have to live on a calendar she
-owns — this script keeps that owned calendar in sync automatically.
+Why copies onto her primary, specifically (all confirmed the hard way):
+- Square only blocks events you **own** — events she's merely *invited* to (the
+  Mastermind calls) do **not** block, even when accepted.
+- Square syncs only **one** calendar, and hers is her **primary** — so a separate
+  calendar would be ignored.
+- A *subscription* is read-only (no Busy/Free) and Square won't sync it.
+
+So the fix is to *create* owned copies on her primary. `WRITE_TO_PRIMARY` (default
+`true`) controls this; set it false only if you deliberately point Square at
+`DEST_CAL_NAME` instead.
+
+Note: the group calls will appear twice on her primary — her accepted invite plus
+the owned copy that actually blocks Square. To avoid the visual double, remove her
+as a guest from the call invites (the owned copies carry the Hunty Meet link).
 
 ## Files
 - `mastermind-calendar-sync.gs` — the whole thing (paste into script.google.com).

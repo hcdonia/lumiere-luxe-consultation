@@ -22,8 +22,12 @@ var CONFIG = {
   // Hunter's "Mastermind" calendar (verified live 2026-07-21).
   SOURCE_CAL_ID: 'c_515e3e155a61cf0257ebf73e30ecbf1f2e68967d371f1067de9f2fb4fa4277ee@group.calendar.google.com',
 
-  // The calendar Michelle OWNS that events are copied into.
-  // Created automatically on the first run. THIS is the calendar you point Square at.
+  // Where the copies are written. Square syncs only ONE calendar and only blocks
+  // events she OWNS -- so we write copies onto her PRIMARY calendar (the one Square
+  // already syncs). These copies are created by her, so Square blocks them, unlike
+  // the invites she's only a guest on.
+  // Set WRITE_TO_PRIMARY=false ONLY if you deliberately point Square at DEST_CAL_NAME.
+  WRITE_TO_PRIMARY: true,
   DEST_CAL_NAME: 'Mastermind (Hunter)',
 
   // How far ahead to keep in sync (days). Covers the retreat + months of calls.
@@ -49,7 +53,7 @@ function syncMastermind() {
       return;
     }
 
-    var dest = getOrCreateDestCalendar_(CONFIG.DEST_CAL_NAME);
+    var dest = getDestCalendar_();
 
     var now = new Date();
     var end = new Date(now.getTime() + CONFIG.DAYS_AHEAD * 24 * 60 * 60 * 1000);
@@ -172,10 +176,14 @@ function reconcileMirror_(dest, mirror, se, key) {
 }
 
 /**
- * Find-or-create the destination calendar, making sure it's one Michelle owns
- * (so we can write to it). Never returns a read-only shared calendar.
+ * Resolve the destination calendar. Defaults to Michelle's PRIMARY calendar --
+ * the one Square syncs -- so the copies actually block her Square availability.
+ * If WRITE_TO_PRIMARY is false, find-or-create a separate owned calendar named
+ * DEST_CAL_NAME instead (only useful if you point Square at that calendar).
  */
-function getOrCreateDestCalendar_(name) {
+function getDestCalendar_() {
+  if (CONFIG.WRITE_TO_PRIMARY) return CalendarApp.getDefaultCalendar();
+  var name = CONFIG.DEST_CAL_NAME;
   var cals = CalendarApp.getCalendarsByName(name);
   for (var i = 0; i < cals.length; i++) {
     if (cals[i].isOwnedByMe()) return cals[i];
