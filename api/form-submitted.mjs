@@ -190,9 +190,12 @@ async function claimRecapMarker(submissionID, qid) {
 }
 
 // --- Copy (Michelle's voice, no em-dashes) ----------------------------------
+// Service names may already start with "The" (e.g. "The Natural Luxe") — avoid
+// "our The Natural Luxe".
+const withArticle = (serviceName) => (/^the\s/i.test(serviceName) ? serviceName : `our ${serviceName}`);
 const smsStandard = (first, serviceName, link) =>
   `Hi ${first}, thanks for filling out our new guest form at Lumiere Luxe! Based on your answers, ` +
-  `we recommend our ${serviceName}. You can see your full recommendation and book your appointment ` +
+  `we recommend ${withArticle(serviceName)}. You can see your full recommendation and book your appointment ` +
   `right here whenever you're ready: ${link}`;
 const smsExtensions = (first, link) =>
   `Hi ${first}, thanks for filling out our new guest form at Lumiere Luxe! The next step for ` +
@@ -330,7 +333,7 @@ export default async function handler(req, res) {
         smsBody = smsStandard(first, recommendation.serviceName, resultsLink);
         emailSubject = `Your personalized recommendation from Lumiere Luxe`;
         emailBodyLines = [
-          `Thanks for filling out our new guest form! Based on your answers, we recommend our <strong>${recommendation.serviceName}</strong>.`,
+          `Thanks for filling out our new guest form! Based on your answers, we recommend <strong>${withArticle(recommendation.serviceName)}</strong>.`,
           `<a href="${resultsLink}">See your full recommendation and book your appointment here</a>`,
           `If any questions come up, just give us a text or a call and we are happy to help.`,
         ];
