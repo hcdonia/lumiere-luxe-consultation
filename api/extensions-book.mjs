@@ -83,7 +83,8 @@ export default async function handler(req, res) {
     if (!slotStartAt) {
       return res.status(400).json({ error: 'Missing slotStartAt' });
     }
-    if (!sourceId) {
+    // Only fresh Web Payments nonces — never a stored card-on-file id.
+    if (!sourceId || !/^cnon:/.test(String(sourceId))) {
       return res.status(400).json({ error: 'Missing sourceId (payment token)' });
     }
 
@@ -134,9 +135,11 @@ export default async function handler(req, res) {
     } catch (err) {
       console.error('Payment failed, rolling back booking:', err.message);
       await safeCancelBooking(booking.id);
+      // Generic message only: per-decline detail (CVV vs AVS vs insufficient
+      // funds) is exactly what card-testing scripts harvest.
       return res.status(402).json({
         error: 'payment_failed',
-        detail: err.message || 'Your card could not be charged. Please try a different card.',
+        detail: 'Your card could not be charged. Please double-check the details or try a different card.',
       });
     }
 

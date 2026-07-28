@@ -112,6 +112,51 @@
       </p>
     </section>
 
+    <!-- Extensions Deposit State (booked the consult directly on Square, deposit still owed) -->
+    <section id="ext-deposit" class="state hidden">
+      <h2>One last step: your $35 deposit</h2>
+      <p class="extensions-intro">
+        Thank you for completing your new guest form! Your extensions consultation is booked for:
+      </p>
+      <p class="ext-confirmed-time" id="dep-time"></p>
+      <p class="extensions-disclaimer">
+        <strong>Please note:</strong> All extensions consultations are held with a $35 deposit.
+        If you move forward with an extension service, the $35 is applied toward the total of your
+        services. Otherwise it is non-refundable and covers the consultation itself.
+      </p>
+      <div class="extensions-step">
+        <div id="dep-card-container"></div>
+        <button id="dep-pay-btn" type="button" disabled>Loading payment form…</button>
+        <p id="dep-pay-status" class="ext-status"></p>
+      </div>
+    </section>
+
+    <!-- Extensions Deposit Confirmed -->
+    <section id="ext-deposit-confirmed" class="state hidden">
+      <div class="all-set-icon">💎</div>
+      <h2>Deposit received, you're all set!</h2>
+      <div class="all-set-card">
+        <p>Your extensions consultation is confirmed for:</p>
+        <p class="ext-confirmed-time" id="dep-confirmed-time"></p>
+        <p class="all-set-note">We can't wait to see you!</p>
+      </div>
+      <p class="ext-confirmed-note">
+        Remember: if you move forward with an extension service at your appointment, the $35 fee
+        will be credited toward your services.
+      </p>
+    </section>
+
+    <!-- Extensions Deposit: booking not found -->
+    <section id="ext-deposit-notfound" class="state hidden">
+      <h2>We got your form!</h2>
+      <p>We couldn't automatically match your consultation appointment to collect the deposit,
+        and your card has not been charged. No worries, just reply to our text or give the salon
+        a call and we'll take care of it together.</p>
+      <a href="https://lumiereluxesalon.com" class="book-now-btn" target="_blank" rel="noopener">
+        Visit Our Website
+      </a>
+    </section>
+
     <!-- All Set State (guest already had an appointment booked before the form) -->
     <section id="all-set" class="state hidden">
       <div class="all-set-icon">✨</div>

@@ -24,6 +24,11 @@ const NEW_GUEST_FORM_URL = `https://form.jotform.com/${NEW_GUEST_FORM_ID}`;
 // after submitting they see "you're all set" instead of the AI recommender pushing
 // them to book again. The cancel text uses the plain link (they need to re-book).
 const BOOKED_FORM_URL = `${NEW_GUEST_FORM_URL}?alreadybooked=1`;
+// Extensions-consult bookings skipped the $35 deposit, so their reminders link
+// with alreadybooked=ext -> after submitting, the guest is routed to the
+// deposit-payment page instead of "you're all set".
+const EXT_CONSULT_VARIATION_ID = 'F6SW42MPSJBYS3ORE6GOGJWG';
+const EXT_BOOKED_FORM_URL = `${NEW_GUEST_FORM_URL}?alreadybooked=ext`;
 const CONSULT_ATTR_KEY = 'square:9084740e-1f93-4c87-8937-cce6569f2faa';
 
 // Forward-only anchor: bookings created before this are never escalated/cancelled.
@@ -54,15 +59,15 @@ const NEEDS_BUSINESS_HOURS = new Set(['r24', 'r36', 'sn1', 'sn2', 'cancel']);
 
 // --- Copy (Michelle's voice; no em-dashes) --------------------------------
 // Full-track reminders WARN about the auto-cancel (these bookings do get cancelled at 48h).
-const reminderFullR24 = (first) =>
-  `Hi ${first}, just a friendly reminder from Lumiere Luxe. We still need your new guest form to confirm your appointment, and it will be automatically canceled if we don't receive it. It only takes a couple minutes: ${BOOKED_FORM_URL}`;
-const reminderFullR36 = (first) =>
-  `Hi ${first}, this is your final reminder from Lumiere Luxe. We still haven't received your new guest form, so your appointment will be automatically canceled soon if we don't get it. Please fill it out here to keep your spot: ${BOOKED_FORM_URL}`;
+const reminderFullR24 = (first, url) =>
+  `Hi ${first}, just a friendly reminder from Lumiere Luxe. We still need your new guest form to confirm your appointment, and it will be automatically canceled if we don't receive it. It only takes a couple minutes: ${url}`;
+const reminderFullR36 = (first, url) =>
+  `Hi ${first}, this is your final reminder from Lumiere Luxe. We still haven't received your new guest form, so your appointment will be automatically canceled soon if we don't get it. Please fill it out here to keep your spot: ${url}`;
 // Short-notice reminders do NOT threaten auto-cancel (these are never auto-cancelled; Michelle decides).
-const reminderShort1 = (first) =>
-  `Hi ${first}, just a friendly reminder from Lumiere Luxe. We still need your new guest form to confirm your appointment, it only takes a couple minutes: ${BOOKED_FORM_URL}`;
-const reminderShort2 = (first) =>
-  `Hi ${first}, quick heads up from Lumiere Luxe. We still haven't received your new guest form, and we need it to keep your appointment on the books. Please fill it out here so we can confirm you: ${BOOKED_FORM_URL}`;
+const reminderShort1 = (first, url) =>
+  `Hi ${first}, just a friendly reminder from Lumiere Luxe. We still need your new guest form to confirm your appointment, it only takes a couple minutes: ${url}`;
+const reminderShort2 = (first, url) =>
+  `Hi ${first}, quick heads up from Lumiere Luxe. We still haven't received your new guest form, and we need it to keep your appointment on the books. Please fill it out here so we can confirm you: ${url}`;
 const cancelText = (first) =>
   `Hi ${first}, since we didn't receive your new guest form we've had to release your appointment at Lumiere Luxe. We would still love to see you, just fill out the form and you can book again anytime: ${NEW_GUEST_FORM_URL}`;
 
@@ -467,8 +472,12 @@ export default async function handler(req, res) {
           await tellMichelle(michelle, `⏰ Heads up: *${slackEscape(name)}* booked for ${apptLabel} (under 48h out) and hasn't submitted the new guest form. I'll text reminders but I don't auto-cancel short-notice bookings. Your call on whether to keep or cancel them.`);
         } else {
           if (!e164) { out.action = `skip ${action}: no phone`; results.push(out); continue; }
+          const isExtConsult = (b.appointment_segments || []).some(
+            (s) => s.service_variation_id === EXT_CONSULT_VARIATION_ID
+          );
+          const formUrl = isExtConsult ? EXT_BOOKED_FORM_URL : BOOKED_FORM_URL;
           const copy = { r24: reminderFullR24, r36: reminderFullR36, sn1: reminderShort1, sn2: reminderShort2 }[action];
-          await sendQuoSms(e164, copy(first));
+          await sendQuoSms(e164, copy(first, formUrl));
           await appendMarker(customer.id, { r24: M.R24, r36: M.R36, sn1: M.SN1, sn2: M.SN2 }[action]);
         }
         out.done = true;

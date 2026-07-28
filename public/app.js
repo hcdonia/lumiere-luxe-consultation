@@ -27,6 +27,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     return;
   }
 
+  // Guest booked the extensions consultation DIRECTLY on Square, so the $35
+  // deposit was never collected. They only owe the deposit — no recommender,
+  // no availability calendar, no new booking.
+  if (params.get('extdeposit') && submissionID) {
+    initDepositFlow(submissionID);
+    return;
+  }
+
   if (!submissionID) {
     showState('no-data');
     return;
@@ -364,24 +372,33 @@ function updatePayButtonState() {
   }
 }
 
+// Loads the Square Web Payments SDK and attaches a card input to the given
+// container. Shared by the extensions booking flow and the deposit-only flow.
+// Throws on any failure so each caller can show its own error copy.
+async function attachSquareCard(containerSelector) {
+  const cfgRes = await fetch('/api/extensions-config');
+  if (!cfgRes.ok) throw new Error('config fetch failed');
+  const { applicationId, locationId, environment } = await cfgRes.json();
+
+  // Load Web Payments SDK
+  const sdkUrl = environment === 'production'
+    ? 'https://web.squarecdn.com/v1/square.js'
+    : 'https://sandbox.web.squarecdn.com/v1/square.js';
+
+  await loadScript(sdkUrl);
+
+  if (!window.Square) throw new Error('Square SDK failed to load');
+
+  const payments = window.Square.payments(applicationId, locationId);
+  const card = await payments.card();
+  await card.attach(containerSelector);
+
+  return { payments, card };
+}
+
 async function initSquarePayments() {
   try {
-    const cfgRes = await fetch('/api/extensions-config');
-    if (!cfgRes.ok) throw new Error('config fetch failed');
-    const { applicationId, locationId, environment } = await cfgRes.json();
-
-    // Load Web Payments SDK
-    const sdkUrl = environment === 'production'
-      ? 'https://web.squarecdn.com/v1/square.js'
-      : 'https://sandbox.web.squarecdn.com/v1/square.js';
-
-    await loadScript(sdkUrl);
-
-    if (!window.Square) throw new Error('Square SDK failed to load');
-
-    const payments = window.Square.payments(applicationId, locationId);
-    const card = await payments.card();
-    await card.attach('#card-container');
+    const { payments, card } = await attachSquareCard('#card-container');
 
     extState.payments = payments;
     extState.card = card;
@@ -472,5 +489,139 @@ async function handleExtensionsPay() {
   } finally {
     extState.busy = false;
     updatePayButtonState();
+  }
+}
+
+// ============================================================
+// Extensions Deposit-Only Flow (booked on Square, deposit still owed)
+// ============================================================
+
+let depState = {
+  card: null,
+  payments: null,
+  submissionID: null,
+  busy: false,
+};
+
+async function initDepositFlow(submissionID) {
+  depState.submissionID = submissionID;
+
+  const statusEl = document.getElementById('dep-pay-status');
+  showState('ext-deposit');
+  // The loading text sits where the appointment time will land, so the page
+  // never shows "booked for:" followed by nothing.
+  document.getElementById('dep-time').textContent = 'Looking up your appointment…';
+
+  // Step 1: find their booking + whether the deposit is already paid.
+  let info;
+  try {
+    const res = await fetch(`/api/extensions-deposit?submissionID=${encodeURIComponent(submissionID)}`);
+    if (res.status === 404) {
+      // Not an eligible deposit link — hand them to the salon.
+      showState('ext-deposit-notfound');
+      return;
+    }
+    if (!res.ok) throw new Error('deposit lookup failed');
+    info = await res.json();
+  } catch (err) {
+    // Transient server trouble is NOT "no booking" — show the generic error
+    // state (refresh may fix it) instead of a permanent-looking not-found.
+    console.error('Deposit lookup error:', err);
+    showState('error');
+    return;
+  }
+
+  if (!info || !info.found) {
+    showState('ext-deposit-notfound');
+    return;
+  }
+
+  // Already paid (e.g. they refreshed or came back to the link) — treat as done.
+  if (info.depositPaid) {
+    document.getElementById('dep-confirmed-time').textContent = info.startLabel || '';
+    showState('ext-deposit-confirmed');
+    return;
+  }
+
+  document.getElementById('dep-time').textContent = info.startLabel || '';
+  statusEl.textContent = '';
+
+  // Step 2: stand up the card form.
+  document.getElementById('dep-pay-btn').addEventListener('click', handleDepositPay);
+
+  try {
+    const { payments, card } = await attachSquareCard('#dep-card-container');
+    depState.payments = payments;
+    depState.card = card;
+    updateDepositButtonState();
+  } catch (err) {
+    console.error('Square payments init failed:', err);
+    statusEl.textContent = 'Could not load the payment form. Please refresh and try again.';
+    statusEl.className = 'ext-status error';
+  }
+}
+
+function updateDepositButtonState() {
+  const btn = document.getElementById('dep-pay-btn');
+  if (depState.card && !depState.busy) {
+    btn.disabled = false;
+    btn.textContent = 'Pay $35 Deposit';
+  } else if (!depState.card) {
+    btn.disabled = true;
+    btn.textContent = 'Loading payment form…';
+  }
+}
+
+async function handleDepositPay() {
+  if (depState.busy || !depState.card) return;
+
+  const statusEl = document.getElementById('dep-pay-status');
+  const btn = document.getElementById('dep-pay-btn');
+
+  depState.busy = true;
+  btn.disabled = true;
+  btn.textContent = 'Processing…';
+  statusEl.textContent = '';
+  statusEl.className = 'ext-status';
+
+  try {
+    const tokenResult = await depState.card.tokenize();
+    if (tokenResult.status !== 'OK') {
+      const errMsg = tokenResult.errors?.[0]?.message || 'Card details look invalid.';
+      throw new Error(errMsg);
+    }
+
+    const res = await fetch('/api/extensions-deposit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        submissionID: depState.submissionID,
+        sourceId: tokenResult.token,
+      }),
+    });
+
+    const data = await res.json();
+
+    if (res.status === 404) {
+      // Their booking disappeared (cancelled/rescheduled) — hand them to the salon.
+      showState('ext-deposit-notfound');
+      return;
+    }
+
+    if (!res.ok) {
+      throw new Error(data.detail || data.error || 'Deposit payment failed');
+    }
+
+    // Success (or it was already paid) — same confirmation either way.
+    document.getElementById('dep-confirmed-time').textContent = data.startLabel || '';
+    // Deposit is tracked server-side (Square webhook → Google Ads offline import), not here.
+    showState('ext-deposit-confirmed');
+  } catch (err) {
+    console.error('Deposit pay error:', err);
+    statusEl.textContent = err.message || 'Something went wrong. Please try again.';
+    statusEl.className = 'ext-status error';
+  } finally {
+    depState.busy = false;
+    updateDepositButtonState();
   }
 }

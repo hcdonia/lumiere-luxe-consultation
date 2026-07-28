@@ -29,6 +29,11 @@ const NEW_GUEST_FORM_URL = `https://form.jotform.com/${NEW_GUEST_FORM_ID}`;
 // alreadybooked prefill: after submitting they see "you're all set" instead of
 // the AI recommender pushing them to book again.
 const BOOKED_FORM_URL = `${NEW_GUEST_FORM_URL}?alreadybooked=1`;
+// A guest who booked the EXTENSIONS CONSULTATION directly on Square skipped the
+// $35 deposit, so their form link carries alreadybooked=ext: after submitting,
+// intake routes them to the deposit-payment page instead of "you're all set".
+const EXT_CONSULT_VARIATION_ID = 'F6SW42MPSJBYS3ORE6GOGJWG';
+const EXT_BOOKED_FORM_URL = `${NEW_GUEST_FORM_URL}?alreadybooked=ext`;
 
 // create-customer.mjs writes the consultation summary to this Square customer
 // custom attribute. Its presence means the guest completed the form flow.
@@ -566,7 +571,7 @@ export default async function handler(req, res) {
         `*${customerName}* just paid the $35 deposit and booked an extensions consultation!`,
         `📅 ${bookingDate}`,
         ``,
-        `💰 Deposit paid — apply $35 credit toward extension services if she moves forward.`,
+        `💰 Deposit paid — apply $35 credit toward extension services if they move forward.`,
         ``,
         `They submitted a consultation form — check their answers and photos:`,
         `👉 <${submissionUrl}|View Full Submission>`,
@@ -637,10 +642,16 @@ export default async function handler(req, res) {
           nudge = { skipped: 'already nudged' };
         } else {
           const first = ((customer.given_name || '').trim() || 'there').slice(0, 40);
-          const body =
-            `Hi ${first}, this is the team at Lumiere Luxe Salon. We're so excited you booked with us! ` +
-            `Before we confirm your appointment, please fill out our quick new guest form so we can ` +
-            `prepare for your visit and get you to your hair goals: ${BOOKED_FORM_URL}`;
+          const isExtConsult = (booking.appointment_segments || []).some(
+            (s) => s.service_variation_id === EXT_CONSULT_VARIATION_ID
+          );
+          const body = isExtConsult
+            ? `Hi ${first}, this is the team at Lumiere Luxe Salon. We're so excited you booked an ` +
+              `extensions consultation with us! To confirm your appointment, please fill out our quick ` +
+              `new guest form and place the $35 deposit that holds your consultation spot: ${EXT_BOOKED_FORM_URL}`
+            : `Hi ${first}, this is the team at Lumiere Luxe Salon. We're so excited you booked with us! ` +
+              `Before we confirm your appointment, please fill out our quick new guest form so we can ` +
+              `prepare for your visit and get you to your hair goals: ${BOOKED_FORM_URL}`;
           await sendQuoSms(e164, body);
           const marker = `[NEWGUESTNUDGE:${bookingId}]`;
           await squarePut(`/v2/customers/${customerId}`, {

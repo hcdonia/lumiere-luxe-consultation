@@ -369,12 +369,14 @@ header {
   color: #5c4a2c;
 }
 
-#card-container {
+#card-container,
+#dep-card-container {
   margin-bottom: 16px;
   min-height: 90px;
 }
 
-#ext-pay-btn {
+#ext-pay-btn,
+#dep-pay-btn {
   background: #b89b7a;
   color: #fff;
   border: none;
@@ -388,11 +390,13 @@ header {
   transition: background 0.15s ease;
 }
 
-#ext-pay-btn:hover:not(:disabled) {
+#ext-pay-btn:hover:not(:disabled),
+#dep-pay-btn:hover:not(:disabled) {
   background: #a38868;
 }
 
-#ext-pay-btn:disabled {
+#ext-pay-btn:disabled,
+#dep-pay-btn:disabled {
   background: #d8cfc4;
   cursor: not-allowed;
 }

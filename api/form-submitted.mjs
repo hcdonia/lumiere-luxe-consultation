@@ -33,6 +33,7 @@ import {
   hiddenField,
 } from '../lib/recommendation.mjs';
 import { saveConsultation } from '../lib/consultation-note.mjs';
+import { extDepositOwed as liveExtDepositOwed } from '../lib/ext-booking.mjs';
 
 // Jotform posts multipart/form-data; keep the raw bytes so we can parse it.
 export const config = { api: { bodyParser: false } };
@@ -204,6 +205,11 @@ const smsExtensions = (first, link) =>
 const smsAllSet = (first) =>
   `Hi ${first}, thanks for filling out your new guest form at Lumiere Luxe! You're all set for ` +
   `your upcoming appointment and we can't wait to see you.`;
+// They booked the extensions consultation directly on Square, so the $35 deposit
+// was never collected. Send them to the deposit-only page instead of "all set".
+const smsExtDeposit = (first, link) =>
+  `Hi ${first}, thanks for filling out your new guest form at Lumiere Luxe! One last step: your ` +
+  `extensions consultation is held with a $35 deposit. You can place it right here: ${link}`;
 
 const emailHtml = (first, bodyLines) => [
   `<p>Hi ${first},</p>`,
@@ -253,10 +259,29 @@ export default async function handler(req, res) {
       return res.status(200).json({ received: true, skipped: 'recap already sent' });
     }
 
-    const alreadyBooked = !!hiddenField(submission, 'alreadybooked')?.value;
+    // `alreadybooked=ext` marks a guest who booked the extensions consultation
+    // DIRECTLY on Square, so they skipped the $35 deposit and still owe it.
+    const alreadyBookedValue = hiddenField(submission, 'alreadybooked')?.value;
+    const alreadyBooked = !!alreadyBookedValue;
+    let extDepositOwed = String(alreadyBookedValue || '').trim().toLowerCase() === 'ext';
     const gclid = hiddenField(submission, 'gclid')?.value || '';
     const isExtensions = wantsExtensions(submission);
     const clientInfo = extractClientInfo(submission);
+
+    // The prefill value is guest-editable URL text (a guest could hand-edit
+    // ?alreadybooked=ext down to =1 and dodge the $35 deposit), so for ANY
+    // already-booked guest, derive "owes the deposit" from their LIVE Square
+    // booking instead. This also flips 'ext' back off when the deposit is
+    // already paid or the booking is gone. On a Square error, fall back to the
+    // prefill value rather than blocking the recap.
+    if (alreadyBooked) {
+      try {
+        const live = await liveExtDepositOwed({ email: clientInfo.email, phone: clientInfo.phone });
+        extDepositOwed = live.owes;
+      } catch (e) {
+        console.error('[form-submitted] live ext-deposit check failed, using prefill value:', e.message);
+      }
+    }
     const first = ((clientInfo.givenName || '').trim() || 'there').slice(0, 40);
     const e164 = toE164(clientInfo.phone);
     const email = (clientInfo.email || '').trim();
@@ -264,6 +289,7 @@ export default async function handler(req, res) {
     const resultsParams = new URLSearchParams({ submissionID });
     if (gclid) resultsParams.set('gclid', gclid);
     const resultsLink = `${RESULTS_BASE_URL}/?${resultsParams.toString()}`;
+    const depositLink = `${RESULTS_BASE_URL}/?submissionID=${submissionID}&extdeposit=1`;
 
     // Claim the dedupe marker BEFORE sending. If the claim fails we still proceed
     // (a missing recap is the failure Michelle reported; a rare double-text on an
@@ -281,7 +307,18 @@ export default async function handler(req, res) {
     let noteResult = { status: 'skipped' };
     let smsBody, emailSubject, emailBodyLines;
 
-    if (isExtensions) {
+    if (extDepositOwed) {
+      // They already HAVE the consultation booked (straight on Square), so there
+      // is nothing to recommend and no new booking to prep-note. All that's left
+      // is the $35 deposit, collected on the deposit-only results page.
+      serviceName = 'Extensions consultation';
+      smsBody = smsExtDeposit(first, depositLink);
+      emailSubject = 'One last step for your extensions consultation';
+      emailBodyLines = [
+        `Thanks for filling out your new guest form! One last step: your extensions consultation is held with a $35 deposit, credited toward your services if you move forward.`,
+        `<a href="${depositLink}">You can place your deposit right here</a>`,
+      ];
+    } else if (isExtensions) {
       // Extensions guests book via the deposit flow on the results page; their
       // Square profile is created at deposit time, so no prep-note write here.
       serviceName = 'Extensions consultation';
@@ -390,7 +427,9 @@ export default async function handler(req, res) {
       ``,
       `*${slackEscape(name)}* just filled out the new guest consultation form.`,
       serviceName ? `💇 Recommended: *${slackEscape(serviceName)}*` : '',
-      alreadyBooked ? `✅ They already have an appointment booked, so I sent a "you're all set" note (no booking link).` : `💬 They've been ${sentLabel} their recommendation and booking link.`,
+      extDepositOwed
+        ? `💎 They booked the extensions consultation directly on Square without the deposit. I sent them the deposit link. You'll get a 💎 ping when it's paid; no ping means it's still unpaid, so keep or cancel their spot as you see fit.`
+        : (alreadyBooked ? `✅ They already have an appointment booked, so I sent a "you're all set" note (no booking link).` : `💬 They've been ${sentLabel} their recommendation and booking link.`),
       clientInfo.phone ? `📱 ${slackEscape(clientInfo.phone)}` : '',
       clientInfo.email ? `📧 ${slackEscape(clientInfo.email)}` : '',
       ``,

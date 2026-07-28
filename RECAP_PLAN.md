@@ -46,3 +46,19 @@ Also: people who already booked on Square still got funneled to the recommender.
 
 ## Status: LIVE 2026-07-28. First real submission is the end-to-end proof; watch for
 ## Michelle's Slack DM + the guest text.
+
+## Phase 2 (2026-07-28, later): $35 deposit required for direct-Square ext-consult bookings
+Guests who book the extensions consultation directly on Square bypass the deposit. Now:
+nudge/escalation texts carry ?alreadybooked=ext -> after the form, intake routes to a
+deposit-only page (existing appointment shown, card form, $35, no new booking).
+`api/extensions-deposit.mjs` + shared `lib/ext-booking.mjs`; webhook derives "owes deposit"
+from the LIVE Square booking (prefill is guest-editable); paid = booking-scoped DEPOSIT PAID
+note + 💎 Slack (PENDING bookings flagged "refund if you decline"). Review panel (3 lenses)
+findings all fixed or consciously accepted: 93-day lookup, nonce-scoped idempotency,
+concurrent-charge auto-refund, generic decline copy + cnon-only source (also retrofitted to
+extensions-book.mjs), form binding, Slack escaping, alert emails on every dead-end.
+ACCEPTED (not built): unpaid-deposit auto-reminder (Michelle chases manually per honest
+Slack copy); no CAPTCHA/rate-limit on the charge endpoints (matches pre-existing
+extensions-book posture; revisit if abuse appears). OPEN for Hunter/Michelle: add the salon
+phone number to the deposit not-found page; ideally hide the ext consult from Square online
+booking so the form flow is the only path in.

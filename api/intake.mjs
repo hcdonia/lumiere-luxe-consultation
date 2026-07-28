@@ -16,9 +16,15 @@ export default async function handler(req, res) {
   // leaves the literal "{alreadybooked}" placeholder when the field is empty, so
   // treat that (and empty) as not set.
   const rawAlready = req.query.alreadybooked || req.body?.alreadybooked || '';
-  const alreadyBooked = !!rawAlready && !/^\{.*\}$/.test(String(rawAlready));
+  const alreadyValue = /^\{.*\}$/.test(String(rawAlready)) ? '' : String(rawAlready).trim().toLowerCase();
 
-  if (alreadyBooked) {
+  // alreadybooked=ext: they booked the extensions consultation directly on Square
+  // and still owe the $35 deposit -> deposit-payment page (needs the submissionID
+  // to find their booking). Any other truthy value -> plain "you're all set".
+  if (alreadyValue === 'ext' && submissionID) {
+    return res.redirect(302, `/?${new URLSearchParams({ submissionID, extdeposit: '1' }).toString()}`);
+  }
+  if (alreadyValue) {
     return res.redirect(302, '/?allset=1');
   }
 
