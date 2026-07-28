@@ -20,6 +20,10 @@ const SALON_TZ = 'America/Los_Angeles';
 
 const NEW_GUEST_FORM_ID = '251448462902155';
 const NEW_GUEST_FORM_URL = `https://form.jotform.com/${NEW_GUEST_FORM_ID}`;
+// Reminder links carry the alreadybooked prefill: these guests HAVE a booking, so
+// after submitting they see "you're all set" instead of the AI recommender pushing
+// them to book again. The cancel text uses the plain link (they need to re-book).
+const BOOKED_FORM_URL = `${NEW_GUEST_FORM_URL}?alreadybooked=1`;
 const CONSULT_ATTR_KEY = 'square:9084740e-1f93-4c87-8937-cce6569f2faa';
 
 // Forward-only anchor: bookings created before this are never escalated/cancelled.
@@ -51,14 +55,14 @@ const NEEDS_BUSINESS_HOURS = new Set(['r24', 'r36', 'sn1', 'sn2', 'cancel']);
 // --- Copy (Michelle's voice; no em-dashes) --------------------------------
 // Full-track reminders WARN about the auto-cancel (these bookings do get cancelled at 48h).
 const reminderFullR24 = (first) =>
-  `Hi ${first}, just a friendly reminder from Lumiere Luxe. We still need your new guest form to confirm your appointment, and it will be automatically canceled if we don't receive it. It only takes a couple minutes: ${NEW_GUEST_FORM_URL}`;
+  `Hi ${first}, just a friendly reminder from Lumiere Luxe. We still need your new guest form to confirm your appointment, and it will be automatically canceled if we don't receive it. It only takes a couple minutes: ${BOOKED_FORM_URL}`;
 const reminderFullR36 = (first) =>
-  `Hi ${first}, this is your final reminder from Lumiere Luxe. We still haven't received your new guest form, so your appointment will be automatically canceled soon if we don't get it. Please fill it out here to keep your spot: ${NEW_GUEST_FORM_URL}`;
+  `Hi ${first}, this is your final reminder from Lumiere Luxe. We still haven't received your new guest form, so your appointment will be automatically canceled soon if we don't get it. Please fill it out here to keep your spot: ${BOOKED_FORM_URL}`;
 // Short-notice reminders do NOT threaten auto-cancel (these are never auto-cancelled; Michelle decides).
 const reminderShort1 = (first) =>
-  `Hi ${first}, just a friendly reminder from Lumiere Luxe. We still need your new guest form to confirm your appointment, it only takes a couple minutes: ${NEW_GUEST_FORM_URL}`;
+  `Hi ${first}, just a friendly reminder from Lumiere Luxe. We still need your new guest form to confirm your appointment, it only takes a couple minutes: ${BOOKED_FORM_URL}`;
 const reminderShort2 = (first) =>
-  `Hi ${first}, quick heads up from Lumiere Luxe. We still haven't received your new guest form, and we need it to keep your appointment on the books. Please fill it out here so we can confirm you: ${NEW_GUEST_FORM_URL}`;
+  `Hi ${first}, quick heads up from Lumiere Luxe. We still haven't received your new guest form, and we need it to keep your appointment on the books. Please fill it out here so we can confirm you: ${BOOKED_FORM_URL}`;
 const cancelText = (first) =>
   `Hi ${first}, since we didn't receive your new guest form we've had to release your appointment at Lumiere Luxe. We would still love to see you, just fill out the form and you can book again anytime: ${NEW_GUEST_FORM_URL}`;
 

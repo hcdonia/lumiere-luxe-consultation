@@ -25,6 +25,10 @@ const SQUARE_NOTIFICATION_URL = 'https://lumiere-luxe-consultation.vercel.app/ap
 const NEW_GUEST_FORM_ID = '251448462902155';
 const JOTFORM_TABLES_URL = `https://www.jotform.com/tables/${NEW_GUEST_FORM_ID}`;
 const NEW_GUEST_FORM_URL = `https://form.jotform.com/${NEW_GUEST_FORM_ID}`;
+// The nudge goes to someone who JUST booked, so their form link carries the
+// alreadybooked prefill: after submitting they see "you're all set" instead of
+// the AI recommender pushing them to book again.
+const BOOKED_FORM_URL = `${NEW_GUEST_FORM_URL}?alreadybooked=1`;
 
 // create-customer.mjs writes the consultation summary to this Square customer
 // custom attribute. Its presence means the guest completed the form flow.
@@ -636,7 +640,7 @@ export default async function handler(req, res) {
           const body =
             `Hi ${first}, this is the team at Lumiere Luxe Salon. We're so excited you booked with us! ` +
             `Before we confirm your appointment, please fill out our quick new guest form so we can ` +
-            `prepare for your visit and get you to your hair goals: ${NEW_GUEST_FORM_URL}`;
+            `prepare for your visit and get you to your hair goals: ${BOOKED_FORM_URL}`;
           await sendQuoSms(e164, body);
           const marker = `[NEWGUESTNUDGE:${bookingId}]`;
           await squarePut(`/v2/customers/${customerId}`, {

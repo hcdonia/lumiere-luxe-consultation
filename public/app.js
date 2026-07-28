@@ -20,6 +20,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   const params = new URLSearchParams(window.location.search);
   const submissionID = params.get('submissionID');
 
+  // Guest already had an appointment when they filled out the form (hidden
+  // alreadybooked prefill) — no recommender, no booking push, just confirmation.
+  if (params.get('allset')) {
+    showState('all-set');
+    return;
+  }
+
   if (!submissionID) {
     showState('no-data');
     return;
