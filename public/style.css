@@ -442,6 +442,66 @@ header {
   line-height: 1.6;
 }
 
+/* All Set */
+.all-set-icon {
+  font-size: 2.4rem;
+  line-height: 1;
+  margin-bottom: 14px;
+}
+
+#all-set h2 {
+  font-size: 1.6rem;
+  font-weight: 400;
+  margin-bottom: 12px;
+  color: #1a1a1a;
+}
+
+.all-set-lead {
+  font-size: 1rem;
+  line-height: 1.7;
+  color: #666;
+  margin-bottom: 24px;
+}
+
+.all-set-card {
+  background: #fff;
+  border: 1px solid #e8e2da;
+  border-radius: 12px;
+  padding: 28px 24px;
+  margin-bottom: 28px;
+}
+
+.all-set-card p {
+  font-size: 1rem;
+  line-height: 1.7;
+  color: #444;
+}
+
+.all-set-card p + p {
+  margin-top: 14px;
+}
+
+.all-set-note {
+  color: #a38868;
+}
+
+/* Shared "Visit Our Website" button (all-set, error, no-data) */
+.book-now-btn {
+  display: inline-block;
+  background: #b89b7a;
+  color: #fff;
+  text-decoration: none;
+  padding: 12px 28px;
+  border-radius: 6px;
+  font-size: 0.95rem;
+  letter-spacing: 0.05em;
+  transition: background 0.15s ease;
+}
+
+.book-now-btn:hover {
+  background: #a38868;
+}
+
 /* Animations */
 @keyframes spin {
   to { transform: rotate(360deg); }
