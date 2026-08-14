@@ -35,6 +35,11 @@ const BOOKED_FORM_URL = `${NEW_GUEST_FORM_URL}?alreadybooked=1`;
 const EXT_CONSULT_VARIATION_ID = 'F6SW42MPSJBYS3ORE6GOGJWG';
 const EXT_BOOKED_FORM_URL = `${NEW_GUEST_FORM_URL}?alreadybooked=ext`;
 
+// "Back 2 School- Mother & Daughter Haircuts" is exempt from the entire new-
+// guest form flow (Michelle, 2026-08-14): no SMS nudge, no "missing form"
+// Slack warning, and the welcome packet doesn't wait on a form submission.
+const MOTHER_DAUGHTER_VARIATION_ID = '2V6NWQKYODHG36DZE5AYG2ZS';
+
 // create-customer.mjs writes the consultation summary to this Square customer
 // custom attribute. Its presence means the guest completed the form flow.
 const CONSULT_ATTR_KEY = 'square:9084740e-1f93-4c87-8937-cce6569f2faa';
@@ -513,6 +518,9 @@ export default async function handler(req, res) {
 
     const note = customer.note || '';
     const hasExtensionsDeposit = note.includes('DEPOSIT PAID');
+    const isExemptService = (booking.appointment_segments || []).some(
+      (s) => s.service_variation_id === MOTHER_DAUGHTER_VARIATION_ID
+    );
 
     // --- Google Ads conversion (Square booking) --------------------------
     // Count every new Square booking as a conversion in Google Ads, matched by
@@ -540,7 +548,7 @@ export default async function handler(req, res) {
     const hasAttr = await hasConsultationAttribute(customerId);
     const hasConsultation =
       jotformMatch || hasAttr || Boolean(customer.reference_id) || note.includes('Hair Consultation');
-    const onFile = hasConsultation || hasExtensionsDeposit;
+    const onFile = hasConsultation || hasExtensionsDeposit || isExemptService;
 
     const recommendedMatch = note.match(/Recommended:\s*(.+)/);
     const recommendedService = recommendedMatch ? recommendedMatch[1].trim() : null;
@@ -575,6 +583,15 @@ export default async function handler(req, res) {
         ``,
         `They submitted a consultation form — check their answers and photos:`,
         `👉 <${submissionUrl}|View Full Submission>`,
+      ].join('\n');
+    } else if (isExemptService) {
+      message = [
+        `👩‍👧 *New Client Booking Alert*`,
+        ``,
+        `*${customerName}* just booked Back 2 School- Mother & Daughter Haircuts!`,
+        `📅 ${bookingDate}`,
+        ``,
+        `This service is exempt from the new guest form — no form needed.`,
       ].join('\n');
     } else if (hasConsultation) {
       message = [
@@ -614,6 +631,8 @@ export default async function handler(req, res) {
 
     if (!isCreatedEvent) {
       nudge = { skipped: 'not a booking.created event' };
+    } else if (isExemptService) {
+      nudge = { skipped: 'mother-daughter service — exempt from new-guest flow' };
     } else if (onFile) {
       nudge = { skipped: 'has form/deposit on file' };
     } else if (!bookingActive) {

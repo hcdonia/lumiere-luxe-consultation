@@ -29,6 +29,10 @@ const SALON_TZ = 'America/Los_Angeles';
 
 const NEW_GUEST_FORM_ID = '251448462902155';
 const CONSULT_ATTR_KEY = 'square:9084740e-1f93-4c87-8937-cce6569f2faa';
+// "Back 2 School- Mother & Daughter Haircuts" is exempt from the new-guest form
+// flow (Michelle, 2026-08-14) — never has a form on file, but still gets the
+// welcome packet. Kept in sync with the same constant in square-webhook.mjs.
+const MOTHER_DAUGHTER_VARIATION_ID = '2V6NWQKYODHG36DZE5AYG2ZS';
 
 const NEW_CUSTOMER_THRESHOLD_MINUTES = 30;
 const BUSINESS_START = 8; // LA hour
@@ -195,7 +199,10 @@ export default async function handler(req, res) {
         if (!customer) { out.skip = 'customer not found'; results.push(out); continue; }
         if (!isNewCustomer(customer, b.created_at)) { out.skip = 'not a new guest'; results.push(out); continue; }
         if (HAS_PACKET_MARKER(customer.note)) { out.skip = 'packet already sent'; results.push(out); continue; }
-        if (!(await hasFormOnFile(customer, formIndex))) {
+        const isExemptService = (b.appointment_segments || []).some(
+          (s) => s.service_variation_id === MOTHER_DAUGHTER_VARIATION_ID
+        );
+        if (!isExemptService && !(await hasFormOnFile(customer, formIndex))) {
           out.skip = 'form not completed yet'; results.push(out); continue;
         }
 
