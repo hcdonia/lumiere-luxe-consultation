@@ -30,7 +30,7 @@ const SALON_TZ = 'America/Los_Angeles';
 const NEW_GUEST_FORM_ID = '251448462902155';
 const CONSULT_ATTR_KEY = 'square:9084740e-1f93-4c87-8937-cce6569f2faa';
 // "Back 2 School- Mother & Daughter Haircuts" is exempt from the new-guest form
-// flow (Michelle, 2026-08-14) — never has a form on file, but still gets the
+// flow (Michelle, 2026-08-14): never has a form on file, but still gets the
 // welcome packet. Kept in sync with the same constant in square-webhook.mjs.
 const MOTHER_DAUGHTER_VARIATION_ID = '2V6NWQKYODHG36DZE5AYG2ZS';
 

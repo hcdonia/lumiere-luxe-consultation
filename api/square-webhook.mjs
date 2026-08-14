@@ -584,15 +584,6 @@ export default async function handler(req, res) {
         `They submitted a consultation form — check their answers and photos:`,
         `👉 <${submissionUrl}|View Full Submission>`,
       ].join('\n');
-    } else if (isExemptService) {
-      message = [
-        `👩‍👧 *New Client Booking Alert*`,
-        ``,
-        `*${customerName}* just booked Back 2 School- Mother & Daughter Haircuts!`,
-        `📅 ${bookingDate}`,
-        ``,
-        `This service is exempt from the new guest form — no form needed.`,
-      ].join('\n');
     } else if (hasConsultation) {
       message = [
         `✨ *New Client Booking Alert*`,
@@ -606,6 +597,17 @@ export default async function handler(req, res) {
         ``,
         `Consultation notes:`,
         `> ${safeNote.replace(/\n/g, '\n> ')}`,
+      ].join('\n');
+    } else if (isExemptService) {
+      // Below hasConsultation on purpose: if an exempt guest DID submit a form,
+      // Michelle should still get the rich message with their submission link.
+      message = [
+        `👩‍👧 *New Client Booking Alert*`,
+        ``,
+        `*${customerName}* just booked Back 2 School- Mother & Daughter Haircuts!`,
+        `📅 ${bookingDate}`,
+        ``,
+        `This service is exempt from the new guest form, so no form is needed.`,
       ].join('\n');
     } else {
       message = [
@@ -632,7 +634,7 @@ export default async function handler(req, res) {
     if (!isCreatedEvent) {
       nudge = { skipped: 'not a booking.created event' };
     } else if (isExemptService) {
-      nudge = { skipped: 'mother-daughter service — exempt from new-guest flow' };
+      nudge = { skipped: 'mother-daughter service, exempt from new-guest flow' };
     } else if (onFile) {
       nudge = { skipped: 'has form/deposit on file' };
     } else if (!bookingActive) {

@@ -31,7 +31,7 @@ const EXT_CONSULT_VARIATION_ID = 'F6SW42MPSJBYS3ORE6GOGJWG';
 const EXT_BOOKED_FORM_URL = `${NEW_GUEST_FORM_URL}?alreadybooked=ext`;
 const CONSULT_ATTR_KEY = 'square:9084740e-1f93-4c87-8937-cce6569f2faa';
 // "Back 2 School- Mother & Daughter Haircuts" is exempt from the entire
-// new-guest form flow (Michelle, 2026-08-14) — never reminded, never
+// new-guest form flow (Michelle, 2026-08-14): never reminded, never
 // auto-cancelled. Kept in sync with the same constant in square-webhook.mjs.
 const MOTHER_DAUGHTER_VARIATION_ID = '2V6NWQKYODHG36DZE5AYG2ZS';
 
@@ -396,7 +396,7 @@ export default async function handler(req, res) {
         const isExemptService = (b.appointment_segments || []).some(
           (s) => s.service_variation_id === MOTHER_DAUGHTER_VARIATION_ID
         );
-        if (isExemptService) { out.skip = 'mother-daughter service — exempt from new-guest flow'; results.push(out); continue; }
+        if (isExemptService) { out.skip = 'mother-daughter service, exempt from new-guest flow'; results.push(out); continue; }
         if (new Date(b.created_at) < goLive) { out.skip = 'before go-live'; results.push(out); continue; }
         if (new Date(b.start_at) <= now) { out.skip = 'appt passed'; results.push(out); continue; }
 
