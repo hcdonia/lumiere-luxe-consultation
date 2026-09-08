@@ -198,6 +198,12 @@ const smsStandard = (first, serviceName, link) =>
   `Hi ${first}, thanks for filling out our new guest form at Lumiere Luxe! Based on your answers, ` +
   `we recommend ${withArticle(serviceName)}. You can see your full recommendation and book your appointment ` +
   `right here whenever you're ready: ${link}`;
+// The recommendation step failed for this guest. Don't quote a service we don't
+// have — send them to the results page, which builds its own recommendation when
+// it loads, so they still get the full experience.
+const smsNoService = (first, link) =>
+  `Hi ${first}, thanks for filling out our new guest form at Lumiere Luxe! Your personalized ` +
+  `recommendation is ready, and you can book your appointment right from the same page: ${link}`;
 const smsExtensions = (first, link) =>
   `Hi ${first}, thanks for filling out our new guest form at Lumiere Luxe! The next step for ` +
   `extensions is a consultation with our extensionist, and a $35 deposit reserves your spot. ` +
@@ -232,11 +238,15 @@ export default async function handler(req, res) {
 
   const dry = req.query?.dry === '1';
 
+  // Hoisted so the catch below can name the guest whose submission broke —
+  // without it the crash alert says what failed but not who it happened to.
+  let submissionID = null;
+
   try {
     const raw = await readRawBody(req);
     const contentType = req.headers['content-type'] || '';
     const formID = getField(raw, contentType, 'formID');
-    const submissionID = getField(raw, contentType, 'submissionID');
+    submissionID = getField(raw, contentType, 'submissionID');
 
     if (formID && formID !== NEW_GUEST_FORM_ID) {
       return res.status(200).json({ received: true, skipped: `unmapped form: ${formID}` });
@@ -304,6 +314,7 @@ export default async function handler(req, res) {
 
     // --- Work out the recommendation + guest message -----------------------
     let serviceName = null;
+    let recommendationError = null;
     let noteResult = { status: 'skipped' };
     let smsBody, emailSubject, emailBodyLines;
 
@@ -337,15 +348,37 @@ export default async function handler(req, res) {
         ];
       }
     } else {
-      const recommendation = wantsHaircutOnly(submission)
-        ? buildHaircutRecommendation(submission)
-        : await generateRecommendation(submission);
-      serviceName = recommendation.serviceName;
+      // The recommendation is the one step here that can fail on its own (a bad
+      // model response, an API outage). It must never take the whole recap down
+      // with it: the dedupe marker is already claimed above, so an exception
+      // here means the guest is never texted, Michelle never hears about her,
+      // and nothing can ever retry the submission. Degrade instead — the
+      // results page builds its own recommendation when the guest opens it.
+      let recommendation = null;
+      try {
+        recommendation = wantsHaircutOnly(submission)
+          ? buildHaircutRecommendation(submission)
+          : await generateRecommendation(submission);
+      } catch (e) {
+        console.error('[form-submitted] recommendation failed:', e.message);
+        recommendationError = e.message || 'unknown error';
+        await sendAlertEmail(
+          'Lumiere Luxe: AI recommendation failed (guest still contacted)',
+          `Submission ${submissionID} — ${clientInfo.givenName || ''} ${clientInfo.familyName || ''} ` +
+          `(${clientInfo.phone || 'no phone'}, ${clientInfo.email || 'no email'}).\n` +
+          `The guest still got their booking link and Michelle was flagged on Slack, but no prep ` +
+          `notes were saved for this submission.\n` +
+          `Error: ${recommendationError}\nTime (UTC): ${new Date().toISOString()}`
+        );
+      }
+      serviceName = recommendation?.serviceName || null;
 
       // Save prep notes for Michelle. For already-booked guests (who skip the
       // results page entirely now) this webhook is the ONLY write path.
       try {
-        if (!dry) {
+        if (!recommendation) {
+          noteResult = { status: 'skipped', error: 'recommendation failed' };
+        } else if (!dry) {
           noteResult = await saveConsultation({
             clientInfo,
             consultationSummary: recommendation.consultationSummary,
@@ -365,6 +398,13 @@ export default async function handler(req, res) {
         emailSubject = 'Your new guest form is in, you are all set';
         emailBodyLines = [
           `Thanks for filling out your new guest form! You're all set for your upcoming appointment and we can't wait to see you.`,
+        ];
+      } else if (!recommendation) {
+        smsBody = smsNoService(first, resultsLink);
+        emailSubject = 'Your new guest form is in';
+        emailBodyLines = [
+          `Thanks for filling out our new guest form! <a href="${resultsLink}">Your personalized recommendation is ready right here</a>, and you can book your appointment from the same page.`,
+          `If any questions come up, just give us a text or a call and we are happy to help.`,
         ];
       } else {
         smsBody = smsStandard(first, recommendation.serviceName, resultsLink);
@@ -427,6 +467,9 @@ export default async function handler(req, res) {
       ``,
       `*${slackEscape(name)}* just filled out the new guest consultation form.`,
       serviceName ? `💇 Recommended: *${slackEscape(serviceName)}*` : '',
+      recommendationError
+        ? `⚠️ The recommendation didn't generate for this guest, so there are no prep notes saved. Their full answers and photos are on the submission below.`
+        : '',
       extDepositOwed
         ? `💎 They booked the extensions consultation directly on Square without the deposit. I sent them the deposit link. You'll get a 💎 ping when it's paid; no ping means it's still unpaid, so keep or cancel their spot as you see fit.`
         : (alreadyBooked ? `✅ They already have an appointment booked, so I sent a "you're all set" note (no booking link).` : `💬 They've been ${sentLabel} their recommendation and booking link.`),
@@ -450,7 +493,12 @@ export default async function handler(req, res) {
   } catch (err) {
     // Never make Jotform retry-storm — log, alert, acknowledge.
     console.error('[form-submitted] processing error:', err.message);
-    await sendAlertEmail('Lumiere Luxe: form-submitted webhook FAILED', `${err.message}\n${err.stack || ''}`);
+    await sendAlertEmail(
+      'Lumiere Luxe: form-submitted webhook FAILED',
+      `Submission ${submissionID || 'unknown'} — this guest got NO text and Michelle got NO Slack. ` +
+      `The recap marker may already be claimed, so it will not retry on its own.\n` +
+      `View it at ${JOTFORM_TABLES_URL}\n\n${err.message}\n${err.stack || ''}`
+    );
     return res.status(200).json({ received: true, error: true });
   }
 }
